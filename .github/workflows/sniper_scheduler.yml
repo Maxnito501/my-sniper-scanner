@@ -2,11 +2,12 @@ name: 4-Times Auto Sniper 🔫
 
 on:
   schedule:
+    # เวลา UTC (+7 เป็นเวลาไทย)
     - cron: '0 3 * * 1-5'   # 10:00 น.
     - cron: '0 10 * * 1-5'  # 17:00 น.
     - cron: '30 14 * * 1-5' # 21:30 น.
     - cron: '15 21 * * 1-5' # 04:15 น.
-  workflow_dispatch:        # ปุ่มกดรันมือ
+  workflow_dispatch:        # ปุ่มรันมือ
 
 jobs:
   run-sniper:
@@ -28,7 +29,6 @@ jobs:
 
       - name: Run Auto Bot
         env:
-          # ส่งกุญแจครบ 4 ดอก (เช็คชื่อให้ตรงกับใน Settings เป๊ะๆ)
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           LINE_ACCESS_TOKEN: ${{ secrets.LINE_ACCESS_TOKEN }}
