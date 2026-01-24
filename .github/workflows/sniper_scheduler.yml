@@ -1,37 +1,38 @@
-name: 4-Times Auto Sniper (Debug Mode 2) 🕵️
+name: 4-Times Auto Sniper 🔫
 
 on:
-  workflow_dispatch: # ปุ่มกดรันเอง
+  schedule:
+    # ตั้งเวลาทำงาน (เวลา UTC +7 ชั่วโมง = เวลาไทย)
+    - cron: '0 3 * * 1-5'   # 03:00 UTC = 10:00 น. ไทย (ตลาดเช้าเปิด)
+    - cron: '0 10 * * 1-5'  # 10:00 UTC = 17:00 น. ไทย (ตลาดเย็นปิด)
+    - cron: '30 14 * * 1-5' # 14:30 UTC = 21:30 น. ไทย (ตลาด US เปิด)
+    - cron: '15 21 * * 1-5' # 21:15 UTC = 04:15 น. ไทย (ก่อนตลาดเช้า)
+  workflow_dispatch:        # ปุ่มกดรันเอง (เอาไว้ทดสอบ)
 
 jobs:
-  debug-job:
+  run-sniper:
     runs-on: ubuntu-latest
+    
     steps:
-      - name: Checkout code
+      - name: Check out repository code
         uses: actions/checkout@v2
-
-      - name: Show all files (Detective) 🔍
-        run: |
-          echo "=== รายชื่อไฟล์ทั้งหมดในระบบ ==="
-          ls -R
-          echo "==============================="
 
       - name: Set up Python
         uses: actions/setup-python@v2
         with:
           python-version: '3.9'
 
-      - name: Install Libraries
-        run: pip install yfinance pandas requests
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install yfinance pandas requests lxml
 
-      - name: Run Bot (Try 1)
+      - name: Run Auto Bot
+        env:
+          # ดึงกุญแจ Telegram
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          # ดึงกุญแจ LINE (เพิ่มใหม่)
+          LINE_ACCESS_TOKEN: ${{ secrets.LINE_ACCESS_TOKEN }}
+          LINE_USER_ID: ${{ secrets.LINE_USER_ID }}
         run: python auto_bot.py
-        continue-on-error: true # ถ้าพัง ให้ข้ามไปลองวิธี 2
-
-      - name: Run Bot (Try 2 - Case Sensitive?)
-        run: python Auto_Bot.py # ลองตัวใหญ่
-        continue-on-error: true 
-
-      - name: Run Bot (Try 3 - No Underscore?)
-        run: python autobot.py # ลองแบบไม่มีขีด
-        continue-on-error: true
