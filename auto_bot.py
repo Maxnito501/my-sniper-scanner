@@ -83,7 +83,7 @@ def check_stock(ticker, name=None):
             display_name = name if name else ticker
             
             # ตั้งค่า RSI <= 30 (เปลี่ยนเลขตรงนี้ได้ถ้าอยากให้เตือนเร็วขึ้น)
-            if current_rsi <= 30:
+            if current_rsi <= 100:
                 return f"\n🔥 {display_name}\nPrice: {current_price:.2f}\nRSI: {current_rsi:.1f}\n"
         except Exception as e:
             print(f"⚠️ Error checking {ticker}: {e}")
@@ -105,3 +105,4 @@ if alert_msg:
     send_line(full_msg)
 else:
     print("Market is quiet (No RSI <= 30).")
+
