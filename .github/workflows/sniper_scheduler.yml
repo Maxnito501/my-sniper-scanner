@@ -2,7 +2,6 @@ name: 4-Times Auto Sniper 🔫
 
 on:
   schedule:
-    # เวลา UTC (+7 เป็นเวลาไทย)
     - cron: '0 3 * * 1-5'   # 10:00 น.
     - cron: '0 10 * * 1-5'  # 17:00 น.
     - cron: '30 14 * * 1-5' # 21:30 น.
@@ -20,7 +19,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v2
         with:
-          python-version: '3.9'
+          python-version: '3.11'  # <--- แก้เป็น 3.11 แล้วครับ ✅
 
       - name: Install dependencies
         run: |
