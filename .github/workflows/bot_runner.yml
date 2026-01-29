@@ -1,7 +1,11 @@
-name: Sniper Bot
+name: Run Sniper Bot
 
 on:
+  # สั่งให้ทำงานเมื่อกด Save (push) และมีปุ่มกด (workflow_dispatch)
+  push:
   workflow_dispatch:
+  
+  # ตั้งเวลาทำงานอัตโนมัติ
   schedule:
     - cron: '0 3 * * *'
     - cron: '0 10 * * *'
@@ -20,6 +24,7 @@ jobs:
           python-version: '3.11'
 
       - name: Install dependencies
+        # สั่งติดตั้งแค่ตัวที่จำเป็น (ตัด json ออกจากตรงนี้ด้วยเพื่อความชัวร์)
         run: pip install yfinance pandas requests
 
       - name: Run Auto Bot
