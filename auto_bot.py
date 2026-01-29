@@ -8,12 +8,15 @@ import json
 THAI_STOCKS = [
     "CPALL.BK", "PTT.BK", "LH.BK", "GULF.BK", 
     "SCB.BK", "ADVANC.BK", "AOT.BK", "KBANK.BK", "BDMS.BK",
-    "PTTEP.BK"   # <--- จัดให้แล้วครับ
+    "PTTEP.BK"
 ]
 
+# เพิ่มกองทุน Global Quality (QUAL)
 FUND_MAPPING = {
     "SCBSEMI": "SMH",
-    "SCBRMNDQ": "QQQ",
+    "SCBRMNDQ (Nasdaq)": "QQQ",
+    "SCBRMS&P500 (S&P500)": "SPY",
+    "SCBGQUAL (Quality)": "QUAL", # <--- เพิ่มตรงนี้ครับ
     "Gold": "GLD"
 }
 
@@ -47,7 +50,7 @@ def send_line(message):
         print("✅ Sent to LINE")
     except Exception as e: print(f"❌ LINE Error: {e}")
 
-# --- 4. ฟังก์ชันคำนวณ (ฉบับแก้บั๊กสมบูรณ์) ---
+# --- 4. ฟังก์ชันคำนวณ ---
 def calculate_rsi(series, period=14):
     delta = series.diff()
     gain = (delta.where(delta > 0, 0)).ewm(alpha=1/period, adjust=False).mean()
@@ -65,7 +68,7 @@ def get_data(ticker):
         return df
     except: return None
 
-# --- 5. เริ่มสแกนหุ้น ---
+# --- 5. เริ่มปฏิบัติการ ---
 print("🚀 Sniper Bot Started...")
 alert_msg = ""
 
@@ -74,7 +77,7 @@ def check_stock(ticker, name=None):
     if df is not None and 'Close' in df.columns:
         try:
             rsi_series = calculate_rsi(df['Close'])
-            current_rsi = float(rsi_series.iloc[-1]) # บังคับเป็นตัวเลข
+            current_rsi = float(rsi_series.iloc[-1])
             current_price = float(df['Close'].iloc[-1])
             display_name = name if name else ticker
             

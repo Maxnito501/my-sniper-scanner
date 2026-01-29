@@ -9,17 +9,19 @@ st.title("📈 Suchat50: Stock Sniper Monitor")
 st.write("ระบบติดตามหุ้นและกองทุนฉบับวิศวกร (RSI Strategy)")
 
 # --- 2. รายชื่อหุ้น (Watchlist) ---
-# เพิ่ม PTTEP.BK ให้เรียบร้อยครับ
 tickers = [
     "CPALL.BK", "PTT.BK", "LH.BK", "GULF.BK", 
     "SCB.BK", "ADVANC.BK", "AOT.BK", "KBANK.BK", 
     "BDMS.BK", "PTTEP.BK"
 ]
 
+# อัปเดตรายชื่อกองทุน (เพิ่ม SCBGQUAL)
 funds = {
-    "SCBSEMI": "SMH", 
-    "SCBRMNDQ": "QQQ", 
-    "Gold": "GLD"
+    "SCBSEMI (Semi-Conductor)": "SMH", 
+    "SCBRMNDQ (Nasdaq-100)": "QQQ", 
+    "SCBRMS&P500 (S&P 500)": "SPY", 
+    "SCBGQUAL (Global Quality)": "QUAL", # <--- น้องใหม่สายคุณภาพ
+    "Gold (ทองคำโลก)": "GLD"
 }
 
 # --- 3. ส่วนควบคุมด้านข้าง ---
@@ -39,19 +41,15 @@ def calculate_rsi(data, window=14):
 def plot_chart(ticker, name):
     st.subheader(f"กราฟราคา: {name}")
     
-    # ดึงข้อมูล
     try:
         df = yf.download(ticker, period="6mo", interval="1d", progress=False)
         
-        # แก้บั๊ก yfinance ใหม่ (MultiIndex)
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.get_level_values(0)
             
         if len(df) > 0:
-            # คำนวณ RSI
             df['RSI'] = calculate_rsi(df['Close'])
             
-            # สร้างกราฟราคา (Candlestick)
             fig = go.Figure()
             fig.add_trace(go.Candlestick(x=df.index,
                             open=df['Open'], high=df['High'],
@@ -60,7 +58,6 @@ def plot_chart(ticker, name):
             
             st.plotly_chart(fig, use_container_width=True)
             
-            # แสดงค่า RSI ล่าสุด
             last_rsi = df['RSI'].iloc[-1]
             st.metric("RSI ปัจจุบัน", f"{last_rsi:.2f}")
             
@@ -83,7 +80,8 @@ with tab1:
     plot_chart(selected_stock, selected_stock)
 
 with tab2:
-    plot_chart(funds[selected_fund], selected_fund)
+    ticker_symbol = funds[selected_fund]
+    plot_chart(ticker_symbol, selected_fund)
 
 st.write("---")
 st.caption("Created by Suchat50 System | Data by Yahoo Finance")
