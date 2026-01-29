@@ -1,17 +1,11 @@
 name: Run Sniper Bot
 
 on:
-  # ส่วนที่ 1: ตั้งเวลาออโต้ (10 โมง และ 5 โมงเย็น)
+  push:                   # สั่งให้ทำงานทันทีที่กด Save (แก้ขัดเรื่องปุ่มหาย)
+  workflow_dispatch:      # คำสั่งสร้างปุ่มกด (Manual Trigger)
   schedule:
-    - cron: '0 3 * * *'
-    - cron: '0 10 * * *'
-  
-  # ส่วนที่ 2: คำสั่งสร้างปุ่มกด (สำคัญมาก! ต้องมีบรรทัดนี้ปุ่มถึงจะมา)
-push:                   # <--- เพิ่มบรรทัดนี้ครับ! (พอกด Save บอทจะทำงานทันที)
-  workflow_dispatch:      # <--- อันนี้คือปุ่มกด (เดี๋ยวจะมาหลังจากรันรอบแรกผ่าน)
-  schedule:
-    - cron: '0 3 * * *'
-    - cron: '0 10 * * *'
+    - cron: '0 3 * * *'   # 10.00 น.
+    - cron: '0 10 * * *'  # 17.00 น.
 
 jobs:
   run-sniper:
@@ -32,7 +26,6 @@ jobs:
 
       - name: Run Auto Bot
         env:
-          # ดึงกุญแจลับมาไขประตู
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           LINE_ACCESS_TOKEN: ${{ secrets.LINE_ACCESS_TOKEN }}
