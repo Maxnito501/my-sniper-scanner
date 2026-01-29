@@ -1,33 +1,33 @@
-name: 4-Times Auto Sniper 🔫
+name: Run Sniper Bot
 
 on:
   schedule:
-    - cron: '0 3 * * 1-5'   # 10:00 น.
-    - cron: '0 10 * * 1-5'  # 17:00 น.
-    - cron: '30 14 * * 1-5' # 21:30 น.
-    - cron: '15 21 * * 1-5' # 04:15 น.
-  workflow_dispatch:        # ปุ่มรันมือ
+    # ตั้งเวลาทำงานอัตโนมัติ (เวลา Server UTC = เวลาไทย -7 ชั่วโมง)
+    - cron: '0 3 * * *'   # คือ 10:00 น. เมืองไทย (ตลาดเช้า)
+    - cron: '0 10 * * *'  # คือ 17:00 น. เมืองไทย (ตลาดปิด)
+  
+  workflow_dispatch:      # <--- 🚨 บรรทัดนี้แหละครับ "หัวใจสำคัญ" ที่ทำให้มีปุ่มกด!
 
 jobs:
   run-sniper:
     runs-on: ubuntu-latest
     
     steps:
-      - name: Check out repository code
-        uses: actions/checkout@v2
+      - name: Checkout code
+        uses: actions/checkout@v3
 
-      - name: Set up Python
-        uses: actions/setup-python@v2
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v4
         with:
-          python-version: '3.11'  # <--- แก้เป็น 3.11 แล้วครับ ✅
+          python-version: '3.11'
 
       - name: Install dependencies
         run: |
-          pip install --upgrade pip
-          pip install yfinance pandas requests lxml
+          pip install yfinance pandas requests
 
       - name: Run Auto Bot
         env:
+          # ดึงกุญแจจาก Secrets มาใช้
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           LINE_ACCESS_TOKEN: ${{ secrets.LINE_ACCESS_TOKEN }}
