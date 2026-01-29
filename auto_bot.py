@@ -4,14 +4,17 @@ import yfinance as yf
 import pandas as pd
 import json
 
-# --- 1. ตั้งค่าเป้าหมาย ---
+# --- 1. ตั้งค่าเป้าหมาย (Watchlist) ---
 THAI_STOCKS = [
     "CPALL.BK", "PTT.BK", "LH.BK", "GULF.BK", 
-    "SCB.BK", "ADVANC.BK", "AOT.BK", "KBANK.BK", "BDMS.BK"
+    "SCB.BK", "ADVANC.BK", "AOT.BK", "KBANK.BK", "BDMS.BK",
+    "PTTEP.BK"  # <--- น้องใหม่สายน้ำมัน มาแล้วครับ! 🛢️
 ]
 
 FUND_MAPPING = {
-    "SCBSEMI": "SMH", "SCBRMNDQ": "QQQ", "Gold": "GLD"
+    "SCBSEMI": "SMH",      # เซมิคอนดักเตอร์
+    "SCBRMNDQ": "QQQ",     # Nasdaq
+    "Gold": "GLD"          # ทองคำ
 }
 
 # --- 2. ฟังก์ชันส่ง Telegram ---
@@ -29,18 +32,23 @@ def send_telegram(message):
 def send_line(message):
     token = os.environ.get('LINE_ACCESS_TOKEN')
     user_id = os.environ.get('LINE_USER_ID')
-    if not token or not user_id: return
+    
+    if not token or not user_id:
+        print("⚠️ LINE Keys missing")
+        return
 
     try:
+        # LINE ไม่ชอบเครื่องหมายดอกจัน * เอาออกก่อนส่ง
+        clean_msg = message.replace('*', '')
         requests.post(
             'https://api.line.me/v2/bot/message/push',
             headers={'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'},
-            data=json.dumps({'to': user_id, 'messages': [{'type': 'text', 'text': message.replace('*', '')}]})
+            data=json.dumps({'to': user_id, 'messages': [{'type': 'text', 'text': clean_msg}]})
         )
         print("✅ Sent to LINE")
     except Exception as e: print(f"❌ LINE Error: {e}")
 
-# --- 4. ฟังก์ชันคำนวณ & ดึงข้อมูล (แก้บั๊ก yfinance ใหม่ตรงนี้) ---
+# --- 4. ฟังก์ชันคำนวณ & ดึงข้อมูล (อัปเกรดแล้ว) ---
 def calculate_rsi(series, period=14):
     delta = series.diff()
     gain = (delta.where(delta > 0, 0)).ewm(alpha=1/period, adjust=False).mean()
@@ -50,22 +58,19 @@ def calculate_rsi(series, period=14):
 
 def get_data(ticker):
     try:
-        # ดึงข้อมูล
         df = yf.download(ticker, period="6mo", interval="1d", progress=False)
         
-        # 🛠️ FIX: แก้ปัญหา yfinance ส่งตารางซ้อน (MultiIndex)
+        # 🛠️ FIX: แก้ปัญหา yfinance เวอร์ชันใหม่ส่งตารางซ้อน
         if isinstance(df.columns, pd.MultiIndex):
             try:
-                # พยายามยุบตารางให้เหลือชั้นเดียว
                 df.columns = df.columns.get_level_values(0)
-            except:
-                pass
+            except: pass
                 
         if len(df) == 0: return None
         return df
     except: return None
 
-# --- 5. เริ่มปฏิบัติการ ---
+# --- 5. เริ่มปฏิบัติการ (Core Logic) ---
 print("🚀 Sniper Bot Started...")
 alert_msg = ""
 
@@ -76,15 +81,15 @@ def check_stock(ticker, name=None):
             # คำนวณ RSI
             rsi_series = calculate_rsi(df['Close'])
             
-            # 🛠️ FIX: บังคับแปลงเป็นตัวเลขทศนิยม (float) เพื่อแก้ Error Ambiguous
+            # 🛠️ FIX: บังคับแปลงเป็นตัวเลข (Float) ป้องกัน Error
             current_rsi = float(rsi_series.iloc[-1])
             current_price = float(df['Close'].iloc[-1])
             
             display_name = name if name else ticker
             
-            # ตั้งค่า RSI <= 30 (เปลี่ยนเลขตรงนี้ได้ถ้าอยากให้เตือนเร็วขึ้น)
+            # เงื่อนไขการแจ้งเตือน (RSI <= 30)
             if current_rsi <= 30:
-                return f"\n🔥 {display_name}\nPrice: {current_price:.2f}\nRSI: {current_rsi:.1f}\n"
+                return f"\n🔥 {display_name}\nPrice: {current_price:.2f}\nRSI: {current_rsi:.1f} (ถูกมาก!)\n"
         except Exception as e:
             print(f"⚠️ Error checking {ticker}: {e}")
     return ""
@@ -99,11 +104,9 @@ for name, ticker in FUND_MAPPING.items():
 
 # --- 6. ส่งข้อความ ---
 if alert_msg:
-    full_msg = f"🚨 **SNIPER ALERT** 🚨\n{alert_msg}"
-    print("Found opportunities!")
+    full_msg = f"🚨 **SNIPER ALERT** 🚨\nพบของถูกครับนาย!:{alert_msg}"
+    print("Found opportunities! Sending alerts...")
     send_telegram(full_msg)
     send_line(full_msg)
 else:
     print("Market is quiet (No RSI <= 30).")
-
-
