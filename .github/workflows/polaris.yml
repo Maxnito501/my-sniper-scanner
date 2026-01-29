@@ -1,0 +1,32 @@
+name: Polaris Auto Bot
+
+on:
+  workflow_dispatch:      # ปุ่มกดมือ
+  schedule:
+    - cron: '0 3 * * *'   # 10:00 น.
+    - cron: '30 7 * * *'  # 14:30 น. (ตลาดบ่าย)
+    - cron: '0 10 * * *'  # 17:00 น. (ตลาดปิด)
+
+jobs:
+  run-polaris:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install libraries
+        run: pip install yfinance pandas requests
+
+      - name: Run Bot
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          LINE_ACCESS_TOKEN: ${{ secrets.LINE_ACCESS_TOKEN }}
+          LINE_USER_ID: ${{ secrets.LINE_USER_ID }}
+        run: python bot_polaris.py
