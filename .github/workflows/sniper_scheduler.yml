@@ -1,11 +1,12 @@
 name: Run Sniper Bot
 
 on:
-  push:                   # สั่งให้ทำงานทันทีที่กด Save (แก้ขัดเรื่องปุ่มหาย)
-  workflow_dispatch:      # คำสั่งสร้างปุ่มกด (Manual Trigger)
+  # ต้องย่อหน้าเข้ามาแบบนี้ครับ ปุ่มถึงจะโผล่
+  workflow_dispatch:
+  
   schedule:
-    - cron: '0 3 * * *'   # 10.00 น.
-    - cron: '0 10 * * *'  # 17.00 น.
+    - cron: '0 3 * * *'
+    - cron: '0 10 * * *'
 
 jobs:
   run-sniper:
@@ -15,14 +16,14 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: Set up Python 3.11
+      - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.11'
 
       - name: Install dependencies
-        run: |
-          pip install yfinance pandas requests
+        # สั่งติดตั้งแค่ตัวที่จำเป็น (ตัด json ออกแล้ว)
+        run: pip install yfinance pandas requests
 
       - name: Run Auto Bot
         env:
