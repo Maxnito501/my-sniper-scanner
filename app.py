@@ -27,7 +27,9 @@ FUNDS = {
     "SCBRMNDQ (Nasdaq-100)": "QQQ", 
     "SCBRMS&P500 (S&P 500)": "SPY", 
     "SCBGQUAL (Global Quality)": "QUAL",
-    "Gold (ทองคำโลก)": "GLD"
+    "Gold (ทองคำโลก)": "GLD",
+    "Apple (King)": "AAPL",
+    "Nvidia (AI God)": "NVDA"
 }
 
 # --- 3. ฟังก์ชันคำนวณอินดิเคเตอร์ ---
@@ -148,3 +150,4 @@ if target_ticker:
         * **เส้นสีน้ำเงิน (EMA 200):** เส้นแบ่งนรก-สวรรค์ (ตัวบอกเทรนด์ระยะยาว)
         * **เส้นสีส้ม (EMA 50):** แนวรับ-แนวต้าน ระยะกลาง
         """)
+
