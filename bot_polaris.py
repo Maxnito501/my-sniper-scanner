@@ -11,7 +11,7 @@ TARGETS = {
     "BDMS": "BDMS.BK", "PTTEP": "PTTEP.BK",
     # กองทุนโลก
     "Semi-Conductor": "SMH", "Nasdaq-100": "QQQ", 
-    "S&P 500": "SPY", "Quality": "QUAL", "Gold": "GLD"
+    "S&P 500": "SPY", "Quality": "QUAL", "Gold": "GLD","Apple (King)": "AAPL","Nvidia (AI God)": "NVDA"
 }
 
 # --- 2. ฟังก์ชันส่งข้อความ ---
@@ -89,4 +89,5 @@ if alert_text:
     print(full_msg)
     send_msg(full_msg)
 else:
+
     print("Market quiet. No buy signals.")
