@@ -153,7 +153,7 @@ if data_list:
     res_df = pd.DataFrame(data_list)
     cols = ["Symbol", "Price", "RSI", "Vol", "Strategy", "Action", "P/E", "Div %", "Trend"]
     
-    # 🛠️ FIX: แก้ไขฟังก์ชันระบายสีให้ถูกต้อง (คืนค่า list เท่ากับความยาว row จริงๆ)
+    # 🛠️ FIX: แก้ไขฟังก์ชันระบายสีให้ถูกต้อง (ป้องกัน Error)
     def highlight_rows(row):
         bg_color = row.get("Color", "white")
         txt_color = row.get("TextColor", "black")
@@ -213,7 +213,9 @@ if data_list:
                 fig.add_trace(go.Scatter(x=df_chart.index, y=df_chart['EMA200'], name='EMA 200', line=dict(color='blue', width=2)), row=1, col=1)
 
                 # กราฟ Volume (ล่าง)
-                colors = ['red' if row['Open'] - row['Close'] >= 0 else 'green' for index, row in df_chart.iterrows()]
+                # สีเขียว = ราคาปิด >= ราคาเปิด (แรงซื้อชนะ)
+                # สีแดง = ราคาปิด < ราคาเปิด (แรงขายชนะ)
+                colors = ['red' if row['Open'] > row['Close'] else 'green' for index, row in df_chart.iterrows()]
                 fig.add_trace(go.Bar(x=df_chart.index, y=df_chart['Volume'], marker_color=colors, name='Volume'), row=2, col=1)
 
                 fig.update_layout(height=600, xaxis_rangeslider_visible=False)
