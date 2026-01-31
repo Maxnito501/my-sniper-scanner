@@ -77,9 +77,6 @@ def get_data_from_yahoo(ticker):
 def get_news_sentiment(ticker):
     try:
         news = yf.Ticker(ticker).news
-        # ... (โค้ดข่าวเดิม) ...
-        # เพื่อความกระชับ ขอละไว้ (แต่ในไฟล์จริงใส่เต็มได้เลยครับ)
-        # ใส่ Logic เดิมกลับเข้าไปได้เลยครับ หรือใช้ Return ว่างไปก่อนถ้าเน้นกราฟ
         return [], "⚪ Neutral" 
     except: return [], "⚪ Neutral"
 
@@ -140,7 +137,7 @@ for i, (name, ticker) in enumerate(all_tickers):
             "Ticker": ticker,
             "Price": price,
             "RSI": rsi,
-            "Vol": vol_st, # ช่องใหม่
+            "Vol": vol_st, 
             "Strategy": strat,
             "Action": act,
             "P/E": f"{pe:.1f}" if pe > 0 else "-",
@@ -156,10 +153,12 @@ if data_list:
     res_df = pd.DataFrame(data_list)
     cols = ["Symbol", "Price", "RSI", "Vol", "Strategy", "Action", "P/E", "Div %", "Trend"]
     
+    # 🛠️ FIX: แก้ไขฟังก์ชันระบายสีให้ถูกต้อง (คืนค่า list เท่ากับความยาว row จริงๆ)
     def highlight_rows(row):
         bg_color = row.get("Color", "white")
         txt_color = row.get("TextColor", "black")
-        return [f'background-color: {bg_color}; color: {txt_color}' for _ in cols]
+        # ใช้ len(row) เพื่อให้จำนวนสีเท่ากับจำนวนคอลัมน์ทั้งหมดใน DataFrame
+        return [f'background-color: {bg_color}; color: {txt_color}'] * len(row)
 
     st.dataframe(res_df.style.apply(highlight_rows, axis=1).format({"Price": "{:,.2f}", "RSI": "{:.1f}"}),
                  column_order=cols, height=500, use_container_width=True)
