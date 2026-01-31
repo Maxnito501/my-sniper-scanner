@@ -27,7 +27,7 @@ FUNDS = {
     "SCBRMS&P500 (S&P 500)": "SPY", 
     "SCBGQUAL (Global Quality)": "QUAL", 
     "Gold (ทองคำโลก)": "GLD",
-    "Silver (เงินโลก)": "SLV",
+    "Silver (เงินโลก)": "SLV",      
     "Apple (King)": "AAPL",
     "Nvidia (AI God)": "NVDA"
 }
@@ -249,4 +249,4 @@ if data_list:
                 st.plotly_chart(fig, use_container_width=True)
 
 else:
-    st.error("โหลดข้อมูลไม่ได้ กรุณา Refresh")
+    st.error("ไม่สามารถดึงข้อมูลได้ กรุณากด Refresh (F5) อีกครั้ง")
