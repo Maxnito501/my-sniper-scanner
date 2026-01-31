@@ -5,13 +5,13 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
 # --- 1. ตั้งค่าหน้าเว็บ ---
-st.set_page_config(page_title="Polaris Strategy V5.2", page_icon="🛡️", layout="wide")
+st.set_page_config(page_title="Polaris Strategy V5.3", page_icon="🛡️", layout="wide")
 
-st.title("🛡️ Polaris V5.2: World-Class Trader Edition")
+st.title("🛡️ Polaris V5.3: Pro Trader Edition")
 st.markdown("""
 **ระบบเทรดมาตรฐานกองทุน: กราฟ + พื้นฐาน + ข่าว + บริหารหน้าตัก (Money Management)**
 * 📊 **Analysis:** Technical & Fundamental & Volume
-* 🛡️ **Risk Control:** Position Sizing Calculator (คำนวณจุดซื้อ-ขาย ตาม % ความเสี่ยง)
+* 🛡️ **Risk Control:** คำนวณจุดหนีตาย (Stop Loss) และความคุ้มค่า (RRR)
 * 🌍 **Macro View:** ดูค่าเงินและพันธบัตร (ทิศทางลม)
 """)
 st.write("---")
@@ -79,9 +79,10 @@ def get_macro_data():
 def get_news_sentiment(ticker):
     return [], "⚪ Neutral" 
 
-# --- 5. Strategy Engine ---
+# --- 5. Strategy Engine (Logic Volume V5.3) ---
 def analyze_data(df, pe, div):
     price = df['Close'].iloc[-1]
+    open_price = df['Open'].iloc[-1]
     ema200 = df['EMA200'].iloc[-1]
     rsi = df['RSI'].iloc[-1]
     vol = df['Volume'].iloc[-1]
@@ -108,7 +109,13 @@ def analyze_data(df, pe, div):
         action = "➕ BUY MORE"
         color = "#98FB98"
     
-    vol_status = "🔥 Vol พีค!" if vol > vol_ma * 1.5 else ""
+    # Logic Volume: แยกแยะว่า พีคแบบดี หรือ พีคแบบร้าย
+    vol_status = "-"
+    if vol > vol_ma * 1.5:
+        if price >= open_price:
+            vol_status = "🟢 Vol เข้า (ซื้อ)"
+        else:
+            vol_status = "🔴 Vol ออก (เทขาย)"
     
     return price, rsi, trend, strategy, action, color, text_color, vol_status
 
@@ -132,6 +139,7 @@ for i, (name, ticker) in enumerate(all_tickers):
     
     if df is not None:
         price, rsi, trend, strat, act, col, txt_col, vol_st = analyze_data(df, pe, div)
+        
         data_list.append({
             "Symbol": name.replace(".BK", ""),
             "Ticker": ticker,
@@ -165,19 +173,46 @@ if data_list:
     st.write("---")
     col_chart, col_tools = st.columns([2, 1])
     
-    # ส่วนกราฟ
+    with col_tools:
+        st.subheader("🛡️ Risk Calculator")
+        
+        with st.expander("🧮 คำนวณจุดซื้อ-ขาย (Position Sizing)", expanded=True):
+            st.info("💡 **แผนการเทรด:** ใส่ราคาซื้อ แล้วปรับ % ตามความเสี่ยงที่รับไหว")
+            
+            entry_price = st.number_input("ราคาเข้าซื้อ (Entry Price)", value=0.0, format="%.2f")
+            stop_loss_pct = st.slider("ยอมตัดขาดทุนที่ (%)", 1, 15, 5)   
+            take_profit_pct = st.slider("หวังกำไรที่ (%)", 1, 50, 10)    
+            
+            st.write("---")
+            
+            if entry_price > 0:
+                stop_price = entry_price * (1 - stop_loss_pct/100)
+                target_price = entry_price * (1 + take_profit_pct/100)
+                
+                risk_amt = entry_price - stop_price
+                reward_amt = target_price - entry_price
+                rrr = reward_amt / risk_amt if risk_amt > 0 else 0
+                
+                st.markdown(f"🛑 **จุดหนีตาย (Stop Loss):** `{stop_price:,.2f}`")
+                st.markdown(f"🎯 **จุดขายทำกำไร (Take Profit):** `{target_price:,.2f}`")
+                
+                if rrr >= 2:
+                    st.success(f"✅ **RRR = {rrr:.2f}** (คุ้มเสี่ยง! ลุยได้)")
+                else:
+                    st.error(f"❌ **RRR = {rrr:.2f}** (ได้ไม่คุ้มเสีย อย่าเล่น)")
+                
+                st.caption(f"ถ้าซื้อ 10,000 บาท: เสี่ยงเสีย {10000*stop_loss_pct/100:,.0f} บ. / ลุ้นได้ {10000*take_profit_pct/100:,.0f} บ.")
+
     with col_chart:
         st.subheader("🔍 Technical Chart")
         symbol_list = [d["Symbol"] for d in data_list]
         selected_symbol = st.selectbox("เลือกหุ้น:", symbol_list)
         target = next((t for n, t in all_tickers if n.replace(".BK", "") == selected_symbol), None)
-        
-        # ดึงราคาปัจจุบันมาเป็น Default ให้เครื่องคิดเลข
-        current_price_default = 0.0
+
         if target:
             df_chart, _, _ = get_data_from_yahoo(target)
             if df_chart is not None:
-                current_price_default = float(df_chart['Close'].iloc[-1])
+                current_price_default = float(df_chart['Close'].iloc[-1]) # เก็บค่าไว้ใช้
                 
                 fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_width=[0.2, 0.7])
                 fig.add_trace(go.Candlestick(x=df_chart.index, open=df_chart['Open'], high=df_chart['High'],
@@ -187,44 +222,5 @@ if data_list:
                 fig.add_trace(go.Bar(x=df_chart.index, y=df_chart['Volume'], marker_color=colors, name='Volume'), row=2, col=1)
                 fig.update_layout(height=600, xaxis_rangeslider_visible=False)
                 st.plotly_chart(fig, use_container_width=True)
-
-    # ส่วนเครื่องคิดเลข (กลับมาใช้แบบ % Slider ตาม V5.0)
-    with col_tools:
-        st.subheader("🛡️ Risk Calculator")
-        
-        with st.expander("🧮 คำนวณจุดซื้อ-ขาย (Position Sizing)", expanded=True):
-            st.info("💡 **แผนการเทรด:** ใส่ราคาซื้อ แล้วปรับ % ตามความเสี่ยงที่รับไหว")
-            
-            # รับค่าราคา (Default เป็นราคาปัจจุบันของหุ้นที่เลือกซ้ายมือ)
-            entry_price = st.number_input("ราคาเข้าซื้อ (Entry Price)", value=current_price_default, format="%.2f")
-            
-            # Slider ปรับ % (แบบ V5.0)
-            stop_loss_pct = st.slider("ยอมตัดขาดทุนที่ (%)", 1, 15, 5)   # Default 5%
-            take_profit_pct = st.slider("หวังกำไรที่ (%)", 1, 50, 10)    # Default 10%
-            
-            st.write("---")
-            
-            if entry_price > 0:
-                # คำนวณราคา
-                stop_price = entry_price * (1 - stop_loss_pct/100)
-                target_price = entry_price * (1 + take_profit_pct/100)
-                
-                # คำนวณ Risk/Reward
-                risk_amt = entry_price - stop_price
-                reward_amt = target_price - entry_price
-                rrr = reward_amt / risk_amt if risk_amt > 0 else 0
-                
-                # แสดงผล
-                st.markdown(f"🛑 **จุดหนีตาย (Stop Loss):** `{stop_price:,.2f}`")
-                st.markdown(f"🎯 **จุดขายทำกำไร (Take Profit):** `{target_price:,.2f}`")
-                
-                # วิเคราะห์ความคุ้มค่า
-                if rrr >= 2:
-                    st.success(f"✅ **RRR = {rrr:.2f}** (คุ้มเสี่ยง! ลุยได้)")
-                else:
-                    st.error(f"❌ **RRR = {rrr:.2f}** (ได้ไม่คุ้มเสีย อย่าเล่น)")
-                
-                st.caption(f"ถ้าซื้อ 10,000 บาท: เสี่ยงเสีย {10000*stop_loss_pct/100:,.0f} บ. / ลุ้นได้ {10000*take_profit_pct/100:,.0f} บ.")
-
 else:
     st.error("โหลดข้อมูลไม่ได้ กรุณา Refresh")
