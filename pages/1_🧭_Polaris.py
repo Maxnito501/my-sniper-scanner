@@ -4,9 +4,9 @@ import pandas as pd
 import plotly.graph_objects as go
 
 # --- 1. ตั้งค่าหน้าเว็บ ---
-st.set_page_config(page_title="Polaris Strategy V4.1", page_icon="💎", layout="wide")
+st.set_page_config(page_title="Polaris Strategy V4.3", page_icon="💎", layout="wide")
 
-st.title("💎 Polaris V4.1: Intelligence Edition")
+st.title("💎 Polaris V4.3: Intelligence Edition")
 st.markdown("""
 **ระบบตัดสินใจลงทุน: กราฟ (Technical) + งบ (Fundamental) + ข่าว (Sentiment)**
 * 📊 **Strategy:** วิเคราะห์เทรนด์และจุดซื้อขาย
@@ -126,20 +126,24 @@ def analyze_data(df, pe, div):
         trend = "ขาลง 🐻"
         strategy = "⚡ เล่นสั้น (Swing Trade)"
     
-    # 2. Action Logic
+    # 2. Action Logic & Colors
     action = "⏳ Wait"
-    color = "white"
-    text_color = "black"
+    color = "#f9fafb" # สีเทาอ่อนๆ (Wait)
+    text_color = "#374151" # สีเทาเข้ม
     
+    # Logic สี (High Contrast)
     if rsi <= 30:
         action = "🟢 BUY DIP"
-        color = "#90EE90" # เขียวอ่อน
+        color = "#bbf7d0" # เขียวสดใส
+        text_color = "#14532d" # เขียวเข้ม
     elif rsi >= 70:
         action = "🔴 SELL"
-        color = "#FFB6C1" # แดงอ่อน
+        color = "#fecaca" # แดงอ่อน
+        text_color = "#7f1d1d" # แดงเข้ม
     elif 30 < rsi < 45 and price > ema200:
         action = "➕ BUY MORE"
-        color = "#98FB98"
+        color = "#dcfce7" # เขียวพาสเทล
+        text_color = "#14532d"
         
     return price, rsi, trend, strategy, action, color, text_color
 
@@ -148,7 +152,6 @@ st.subheader("📊 Strategic Dashboard")
 
 data_list = []
 all_tickers = [(s, s) for s in STOCKS] + [(n, t) for n, t in FUNDS.items()]
-
 my_bar = st.progress(0)
 
 for i, (name, ticker) in enumerate(all_tickers):
@@ -159,7 +162,7 @@ for i, (name, ticker) in enumerate(all_tickers):
         
         data_list.append({
             "Symbol": name.replace(".BK", ""),
-            "Ticker": ticker, # เก็บไว้ใช้ดึงข่าว
+            "Ticker": ticker,
             "Price": price,
             "RSI": rsi,
             "Strategy": strat,
@@ -167,7 +170,7 @@ for i, (name, ticker) in enumerate(all_tickers):
             "P/E": f"{pe:.1f}" if pe > 0 else "-",
             "Div %": f"{div:.2f}%" if div > 0 else "-",
             "Trend": trend,
-            "Color": col,
+            "Color": col,       # เก็บค่าสีไว้
             "TextColor": txt_col
         })
     my_bar.progress((i + 1) / len(all_tickers))
@@ -175,23 +178,31 @@ my_bar.empty()
 
 if data_list:
     res_df = pd.DataFrame(data_list)
-    # ตารางหลัก
+    
+    # กำหนดคอลัมน์ที่จะโชว์
     cols_show = ["Symbol", "Price", "RSI", "Strategy", "Action", "P/E", "Div %", "Trend"]
     
+    # ฟังก์ชันระบายสี (Robust Version)
     def highlight_rows(row):
-        bg_color = row.get("Color", "white")
-        txt_color = row.get("TextColor", "black")
-        return [f'background-color: {bg_color}; color: {txt_color}' for _ in cols_show]
+        # ใช้ .get กันเหนียวเผื่อหาไม่เจอ
+        bg_color = row.get('Color', 'white')
+        txt_color = row.get('TextColor', 'black')
+        return [f'background-color: {bg_color}; color: {txt_color}'] * len(row)
 
-    # แสดงตาราง
+    # สร้าง Styler Object
+    # 1. Apply style กับ DataFrame ทั้งหมดก่อน
+    # 2. Format ตัวเลข
+    styler = res_df.style.apply(highlight_rows, axis=1).format({"Price": "{:,.2f}", "RSI": "{:.1f}"})
+    
+    # แสดงผล (บังคับใช้ column_order เพื่อซ่อนช่อง Color)
     st.dataframe(
-        res_df.style.apply(highlight_rows, axis=1, subset=cols_show).format({"Price": "{:,.2f}", "RSI": "{:.1f}"}),
+        styler,
         column_order=cols_show,
-        height=500,
+        height=600,
         use_container_width=True
     )
 
-    # --- 7. Deep Dive & News Room ---
+    # --- 7. Deep Dive ---
     st.write("---")
     st.subheader("🔍 เจาะลึก (Chart & News)")
     
@@ -202,34 +213,25 @@ if data_list:
         symbol_list = [d["Symbol"] for d in data_list]
         selected_symbol = st.selectbox("List", symbol_list, label_visibility="collapsed")
         
-        # หาข้อมูลตัวที่เลือก
         selected_data = next((item for item in data_list if item["Symbol"] == selected_symbol), None)
         target_ticker = selected_data['Ticker']
         
-        # ดึงข่าวและ Sentiment
         news_list, sentiment = get_news_sentiment(target_ticker)
-        
         st.info(f"**Market Sentiment:** {sentiment}")
         
-        # ปุ่มลิงก์ภายนอก (Magic Links)
-        st.markdown("##### 🔗 แหล่งข่าวต้นทาง (Official Sources)")
-        
-        # ถ้าเป็นหุ้นไทย ให้ลิงก์ไป SET
+        st.markdown("##### 🔗 แหล่งข่าวต้นทาง")
         if ".BK" in target_ticker:
             clean_sym = target_ticker.replace(".BK", "")
             set_url = f"https://www.set.or.th/th/market/product/stock/quote/{clean_sym}/news"
-            st.link_button(f"📢 ข่าวทางการ {clean_sym} (SET.or.th)", set_url, type="primary")
+            st.link_button(f"📢 ข่าวทางการ {clean_sym} (SET)", set_url, type="primary")
             
-        # ลิงก์ Yahoo Finance / Google
         yahoo_url = f"https://finance.yahoo.com/quote/{target_ticker}/news"
-        google_url = f"https://www.google.com/search?q={selected_symbol}+stock+news&tbm=nws"
-        
         c1, c2 = st.columns(2)
         c1.link_button("Yahoo News", yahoo_url)
-        c2.link_button("Google News", google_url)
+        c2.link_button("Google News", f"https://www.google.com/search?q={selected_symbol}+stock+news&tbm=nws")
 
         st.markdown("---")
-        st.markdown("##### 🗞️ หัวข้อข่าวล่าสุด (AI Scan)")
+        st.markdown("##### 🗞️ หัวข้อข่าวล่าสุด")
         if news_list:
             for n in news_list:
                 icon = "🟢" if n['score'] > 0 else ("🔴" if n['score'] < 0 else "⚪")
@@ -249,4 +251,4 @@ if data_list:
                 st.plotly_chart(fig, use_container_width=True)
 
 else:
-    st.error("ไม่สามารถดึงข้อมูลได้ กรุณากด Refresh (F5) อีกครั้ง")
+    st.error("โหลดข้อมูลไม่ได้ กรุณากด Refresh (F5) อีกครั้ง")
