@@ -20,14 +20,30 @@ st.markdown("""
 """)
 st.write("---")
 
-# --- 2. ระบบจัดการข้อมูล (Database) ---
+# --- 2. ระบบจัดการข้อมูล (Database & Migration Fix) ---
 DB_FILE = 'gold_data.json'
 
 def load_data():
+    # โหลดไฟล์ถ้ามี
     if os.path.exists(DB_FILE):
         try:
-            with open(DB_FILE, 'r') as f: return json.load(f)
+            with open(DB_FILE, 'r') as f:
+                data = json.load(f)
+                
+                # 🛠️ FIX: ตรวจสอบและเติมค่าที่ขาด (Migration)
+                if 'accumulated_profit' not in data:
+                    data['accumulated_profit'] = 0.0
+                
+                if 'vault' not in data:
+                    data['vault'] = []
+                    
+                if 'portfolio' not in data:
+                    data['portfolio'] = {str(i): {'status': 'EMPTY', 'entry_price': 0.0, 'grams': 0.0, 'date': None} for i in range(1, 6)}
+                
+                return data
         except: pass
+    
+    # ถ้าไม่มีไฟล์ หรือไฟล์เสีย ให้สร้างใหม่
     return {
         'portfolio': {str(i): {'status': 'EMPTY', 'entry_price': 0.0, 'grams': 0.0, 'date': None} for i in range(1, 6)},
         'vault': [],
@@ -177,7 +193,7 @@ if df is not None:
     c2.metric("RSI (1H)", f"{current_rsi:.1f}")
     c3.metric("ราคาทองไทย", f"{current_thb_baht:,.0f} ฿")
     
-    current_capital = base_trade_size + st.session_state.gold_data['accumulated_profit']
+    current_capital = base_trade_size + st.session_state.gold_data.get('accumulated_profit', 0.0)
     c4.metric("เงินทุน (ทบต้น)", f"{current_capital:,.0f} ฿")
 
     st.markdown(f"""
@@ -241,6 +257,11 @@ if df is not None:
                                 'profit': final_profit,
                                 'date': datetime.now().strftime("%Y-%m-%d %H:%M")
                             })
+                            
+                            # เพิ่ม accumulated_profit ให้ชัวร์ก่อนบวก
+                            if 'accumulated_profit' not in st.session_state.gold_data:
+                                st.session_state.gold_data['accumulated_profit'] = 0.0
+                                
                             st.session_state.gold_data['accumulated_profit'] += final_profit
                             st.session_state.gold_data['portfolio'][key] = {'status': 'EMPTY', 'entry_price': 0, 'grams': 0, 'date': None}
                             save_data(st.session_state.gold_data)
