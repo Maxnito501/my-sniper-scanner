@@ -10,66 +10,59 @@ import os
 # --- 1. ตั้งค่าหน้าเว็บ ---
 st.set_page_config(page_title="Gold Sniper System", page_icon="🛰️", layout="wide")
 
-st.title("🛰️ POLARIS: Gold Sniper (Persistent)")
-st.markdown("**ระบบเทรดทองคำระยะสั้น: เก็งกำไรกระแสเงินสด (Auto-Save)**")
+st.title("🛰️ POLARIS: Gold Sniper (Thai Gold Edition)")
+st.markdown("**ระบบเทรดทองคำ 96.5% (GOLD NOW / สมาคมฯ) : เก็งกำไรกระแสเงินสด**")
 st.write("---")
 
 # --- 2. ระบบจัดการข้อมูล (Database) ---
 DB_FILE = 'gold_data.json'
 
 def load_data():
-    """โหลดข้อมูลจากไฟล์ JSON ถ้าไม่มีให้สร้างใหม่"""
     if os.path.exists(DB_FILE):
         try:
-            with open(DB_FILE, 'r') as f:
-                return json.load(f)
+            with open(DB_FILE, 'r') as f: return json.load(f)
         except: pass
-    
-    # ค่าเริ่มต้น
     return {
         'portfolio': {str(i): {'status': 'EMPTY', 'entry_price': 0.0, 'grams': 0.0, 'date': None} for i in range(1, 6)},
         'vault': []
     }
 
 def save_data(data):
-    """บันทึกข้อมูลลงไฟล์"""
-    with open(DB_FILE, 'w') as f:
-        json.dump(data, f)
+    with open(DB_FILE, 'w') as f: json.dump(data, f)
 
-# โหลดข้อมูลเข้า Session State
 if 'gold_data' not in st.session_state:
     st.session_state.gold_data = load_data()
 
 # --- 3. Sidebar ตั้งค่า ---
-st.sidebar.header("⚙️ Sniper Settings")
+st.sidebar.header("⚙️ ตั้งค่าราคา (Calibration)")
 
-# ดึงค่าเงินบาท Real-time
+# ดึงค่าเงินบาท
 @st.cache_data(ttl=300)
 def get_fx_rate():
-    try:
-        fx = yf.Ticker("THB=X").history(period="1d")['Close'].iloc[-1]
-        return float(fx)
+    try: return float(yf.Ticker("THB=X").history(period="1d")['Close'].iloc[-1])
     except: return 34.50
 
 auto_fx = get_fx_rate()
-use_auto_fx = st.sidebar.checkbox("ใช้ค่าเงินบาท Real-time", value=True)
+use_auto_fx = st.sidebar.checkbox("Auto FX Rate", value=True)
 fx_rate = st.sidebar.number_input("ค่าเงินบาท (USD/THB)", value=auto_fx if use_auto_fx else 34.50, step=0.1)
 
-gold_purity = st.sidebar.selectbox("ความบริสุทธิ์ทอง", ["96.5% (ทองไทย)", "99.99% (Spot)"])
+# ตัวจูนราคา (สำคัญมากสำหรับทองไทย)
+st.sidebar.info("💡 **จูนราคา:** ปรับค่า Premium เพื่อให้ราคาตรงกับแอปเป๋าตัง/GOLD NOW")
+premium = st.sidebar.number_input("ส่วนต่างราคา (Premium)", value=100.0, step=10.0, help="บวกเพิ่มจากสูตรคำนวณเพื่อให้ตรงราคาสมาคม")
+
 trade_size = st.sidebar.number_input("วงเงินต่อไม้ (บาท)", value=10000, step=1000)
 
-purity_factor = 0.965 if "96.5" in gold_purity else 1.0
-
 # --- 4. ฟังก์ชันคำนวณ ---
-def usd_to_thb_gram(usd_price, exchange_rate, purity):
-    # 1 Troy Oz = 31.1035 Grams
-    price_per_gram_100 = (usd_price * exchange_rate) / 31.1035
-    return price_per_gram_100 * purity
-
-def usd_to_thb_baht_weight(usd_price, exchange_rate, purity):
-    # ทองคำแท่ง 1 บาท = 15.244 กรัม
-    gram_price = usd_to_thb_gram(usd_price, exchange_rate, purity)
-    return gram_price * 15.244
+def calculate_thai_gold_price(usd_price, exchange_rate, premium_add):
+    # สูตรคำนวณราคาทองไทย 96.5% (บาทละ)
+    # (Spot * FX * 0.965 * 15.244) / 31.1035
+    # หรือสูตรลัด: Spot * FX * 0.473
+    
+    theoretical_price = (usd_price * exchange_rate * 0.473)
+    final_price = theoretical_price + premium_add
+    
+    # ปัดเศษให้สวยงาม (หลัก 50)
+    return round(final_price / 50) * 50
 
 def calculate_indicators(df):
     delta = df['Close'].diff()
@@ -81,7 +74,7 @@ def calculate_indicators(df):
     df['EMA200'] = df['Close'].ewm(span=200, adjust=False).mean()
     return df
 
-@st.cache_data(ttl=60) # อัปเดตทุก 1 นาที
+@st.cache_data(ttl=60)
 def get_gold_data():
     try:
         df = yf.download("GC=F", period="5d", interval="1h", progress=False)
@@ -97,7 +90,7 @@ def analyze_market(df, current_price, portfolio):
     ema200 = df['EMA200'].iloc[-1]
     
     advice = "⏳ WAIT (รอดูสถานการณ์)"
-    color = "#f3f4f6" # เทา
+    color = "#f3f4f6"
     text_color = "black"
 
     # Logic ไม้ 1
@@ -113,18 +106,9 @@ def analyze_market(df, current_price, portfolio):
                 advice = f"🔫 SNIPER SHOT: สวนเทรนด์ (RSI {rsi:.0f})"
                 color = "#dbeafe" # ฟ้า
     else:
-        # Logic ไม้แก้
-        last_active = 0
-        for i in range(1, 6):
-            if portfolio[str(i)]['status'] == 'ACTIVE': last_active = portfolio[str(i)]['entry_price']
-        
-        if last_active > 0:
-            if current_price < last_active * 0.985:
-                advice = "🛡️ FIRE NEXT WOOD: ถัวเฉลี่ย (-1.5%)"
-                color = "#fef9c3" # เหลือง
-            elif current_price > last_active * 1.015:
-                advice = "💰 TAKE PROFIT: ขายทำกำไร (+1.5%)"
-                color = "#fee2e2" # แดงอ่อน
+        # Logic ไม้แก้ (เทียบกับราคาทองไทยที่ซื้อไป)
+        # *หมายเหตุ: Logic นี้ใช้ราคา USD วิเคราะห์กราฟ แต่ตัดสินใจซื้อขายด้วยราคาไทย
+        pass # ใช้ดุลยพินิจราคาไทยประกอบ
 
     return advice, color, text_color, rsi
 
@@ -133,8 +117,8 @@ df = get_gold_data()
 
 if df is not None:
     current_usd = float(df['Close'].iloc[-1])
-    current_thb_gram = usd_to_thb_gram(current_usd, fx_rate, purity_factor)
-    current_thb_baht = usd_to_thb_baht_weight(current_usd, fx_rate, purity_factor)
+    # คำนวณราคาทองไทย 96.5% (บาททองคำ)
+    current_thb_baht = calculate_thai_gold_price(current_usd, fx_rate, premium)
     
     advice, bg_col, txt_col, current_rsi = analyze_market(df, current_usd, st.session_state.gold_data['portfolio'])
 
@@ -142,15 +126,16 @@ if df is not None:
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Gold Spot ($)", f"{current_usd:,.2f}")
     c2.metric("RSI (1H)", f"{current_rsi:.1f}")
-    c3.metric("ทองคำแท่ง (บาทละ)", f"{current_thb_baht:,.0f} ฿", help="ราคาประมาณการ (รวมค่ากำเหน็จอาจแพงกว่านี้)")
+    c3.metric("ราคาทองไทย (บาทละ)", f"{current_thb_baht:,.0f} ฿", help="ราคาประมาณการ (ปรับจูนที่ Sidebar)")
     
-    total_grams = sum(p['grams'] for p in st.session_state.gold_data['portfolio'].values())
-    port_value = total_grams * current_thb_gram
+    # มูลค่าพอร์ต (บาททองคำ * ราคาบาทละ)
+    total_baht_weight = sum(p['grams'] for p in st.session_state.gold_data['portfolio'].values()) # ในที่นี้ grams คือ หน่วยบาททองคำ
+    port_value = total_baht_weight * current_thb_baht
     c4.metric("มูลค่าพอร์ตปัจจุบัน", f"{port_value:,.0f} ฿")
 
     st.markdown(f"""
-    <div style="background-color: {bg_col}; padding: 15px; border-radius: 10px; border: 1px solid #ccc; text-align: center; color: {txt_col};">
-        <h3 style="margin:0;">🤖 {advice}</h3>
+    <div style="background-color: {bg_col}; padding: 10px; border-radius: 5px; color: {txt_col}; text-align: center; font-weight: bold;">
+        🤖 AI SIGNAL: {advice}
     </div>
     """, unsafe_allow_html=True)
     
@@ -175,22 +160,23 @@ if df is not None:
                     if wood['status'] == 'EMPTY':
                         st.caption("สถานะ: ว่าง (Ready)")
                     else:
-                        profit_loss = (current_thb_gram - wood['entry_price']) * wood['grams']
-                        pct = ((current_thb_gram - wood['entry_price']) / wood['entry_price']) * 100
+                        # คำนวณกำไร/ขาดทุน
+                        profit_loss = (current_thb_baht - wood['entry_price']) * wood['grams']
+                        pct = ((current_thb_baht - wood['entry_price']) / wood['entry_price']) * 100
                         color_pl = "green" if profit_loss > 0 else "red"
-                        st.markdown(f"**ทุน:** {wood['entry_price']:.0f} บ./กรัม | **จำนวน:** {wood['grams']:.2f} กรัม")
+                        
+                        st.markdown(f"**ทุน:** {wood['entry_price']:.0f} บ. | **จำนวน:** {wood['grams']:.4f} บาททอง")
                         st.markdown(f"**กำไร/ขาดทุน:** :{color_pl}[{profit_loss:+.0f} ฿ ({pct:+.2f}%)]")
 
                 with col_btn:
                     if wood['status'] == 'EMPTY':
-                        # เช็คเงื่อนไข: ต้องยิงเรียงลำดับ
                         prev_active = True if i == 1 else st.session_state.gold_data['portfolio'][str(i-1)]['status'] == 'ACTIVE'
                         if prev_active:
-                            if st.button(f"🔴 ยิงไม้ {i} (Buy)", key=f"buy_{i}", use_container_width=True):
+                            if st.button(f"🔴 ซื้อ GOLD NOW (ไม้ {i})", key=f"buy_{i}", use_container_width=True):
                                 st.session_state.gold_data['portfolio'][key] = {
                                     'status': 'ACTIVE',
-                                    'entry_price': current_thb_gram,
-                                    'grams': trade_size / current_thb_gram,
+                                    'entry_price': current_thb_baht,
+                                    'grams': trade_size / current_thb_baht, # หน่วยเป็น บาททองคำ
                                     'date': datetime.now().strftime("%Y-%m-%d %H:%M")
                                 }
                                 save_data(st.session_state.gold_data)
@@ -199,16 +185,14 @@ if df is not None:
                             st.button(f"🔒 ล็อก", key=f"lock_{i}", disabled=True, use_container_width=True)
                     else:
                         if st.button(f"🟢 ขายทำกำไร (Sell)", key=f"sell_{i}", type="primary", use_container_width=True):
-                            profit = (current_thb_gram - wood['entry_price']) * wood['grams']
-                            # Save to Vault
+                            profit = (current_thb_baht - wood['entry_price']) * wood['grams']
                             st.session_state.gold_data['vault'].append({
                                 'wood': i,
                                 'buy_price': wood['entry_price'],
-                                'sell_price': current_thb_gram,
+                                'sell_price': current_thb_baht,
                                 'profit': profit,
                                 'date': datetime.now().strftime("%Y-%m-%d %H:%M")
                             })
-                            # Reset Wood
                             st.session_state.gold_data['portfolio'][key] = {'status': 'EMPTY', 'entry_price': 0, 'grams': 0, 'date': None}
                             save_data(st.session_state.gold_data)
                             st.success(f"ขายเรียบร้อย! กำไร {profit:+.0f} บาท")
@@ -222,8 +206,7 @@ if df is not None:
             st.dataframe(v_df, use_container_width=True)
             total_profit = sum(d['profit'] for d in vault_data)
             st.metric("💰 กำไรสะสมทั้งหมด", f"{total_profit:,.2f} บาท")
-            
-            if st.button("🗑️ ล้างประวัติ (Reset Vault)"):
+            if st.button("🗑️ ล้างประวัติ"):
                 st.session_state.gold_data['vault'] = []
                 save_data(st.session_state.gold_data)
                 st.rerun()
@@ -231,12 +214,11 @@ if df is not None:
             st.info("ยังไม่มีประวัติการขายทำกำไร")
 
     with tab3:
-        st.subheader("📈 กราฟทองคำ (Real-time)")
+        st.subheader("📈 กราฟทองคำโลก (Spot Gold)")
         fig = go.Figure()
         fig.add_trace(go.Candlestick(x=df.index, open=df['Open'], high=df['High'],
                         low=df['Low'], close=df['Close'], name='Price'))
         fig.add_trace(go.Scatter(x=df.index, y=df['EMA50'], name='EMA 50', line=dict(color='orange', width=1)))
-        fig.add_trace(go.Scatter(x=df.index, y=df['EMA200'], name='EMA 200', line=dict(color='blue', width=1)))
         fig.update_layout(height=500, xaxis_rangeslider_visible=False)
         st.plotly_chart(fig, use_container_width=True)
 
