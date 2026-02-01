@@ -66,7 +66,7 @@ def get_data(ticker):
 
 # --- 5. เริ่มปฏิบัติการ (Logic แยกเกณฑ์) ---
 print("🚀 Sniper Bot Started...")
-alert_msg = "TEST ALERT"
+alert_msg = ""
 
 def check_stock(ticker, name=None, threshold=30):
     df = get_data(ticker)
@@ -103,4 +103,5 @@ else:
     # msg_quiet = "☕ ตลาดเงียบครับ (ไม่มีตัวไหนเข้าเกณฑ์)"
     # send_line(msg_quiet) 
     print("Market is quiet (No RSI match).")
+
 
