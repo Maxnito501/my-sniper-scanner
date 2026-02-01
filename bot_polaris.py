@@ -4,7 +4,7 @@ import yfinance as yf
 import pandas as pd
 import json
 
-# --- 1. ตั้งค่าเป้าหมาย (เพิ่ม Silver) ---
+# --- 1. ตั้งค่าเป้าหมาย ---
 THAI_STOCKS = [
     "CPALL.BK", "PTT.BK", "LH.BK", "GULF.BK", 
     "SCB.BK", "ADVANC.BK", "AOT.BK", "KBANK.BK", "BDMS.BK",
@@ -12,14 +12,10 @@ THAI_STOCKS = [
 ]
 
 FUND_MAPPING = {
-    "SCBSEMI": "SMH",      # เซมิคอนดักเตอร์
-    "SCBRMNDQ": "QQQ",     # Nasdaq
-    "SCBRMS&P500": "SPY",  # S&P 500 (เพิ่มให้ครบ)
-    "SCBGQUAL": "QUAL",    # Global Quality (เพิ่มให้ครบ)
-    "Gold": "GLD",         # ทองคำ
-    "Silver": "SLV",       # <--- น้องใหม่! เงิน (Silver)
-    "Apple": "AAPL",
-    "Nvidia": "NVDA"
+    "SCBSEMI": "SMH",
+    "SCBRMNDQ": "QQQ",
+    "Gold": "GLD",
+    "Silver": "SLV"
 }
 
 # --- 2. ฟังก์ชันส่ง Telegram ---
@@ -37,11 +33,9 @@ def send_telegram(message):
 def send_line(message):
     token = os.environ.get('LINE_ACCESS_TOKEN')
     user_id = os.environ.get('LINE_USER_ID')
-    
     if not token or not user_id:
         print("⚠️ LINE Keys missing")
         return
-
     try:
         clean_msg = message.replace('*', '')
         requests.post(
@@ -70,11 +64,11 @@ def get_data(ticker):
         return df
     except: return None
 
-# --- 5. เริ่มปฏิบัติการ ---
+# --- 5. เริ่มปฏิบัติการ (Logic แยกเกณฑ์) ---
 print("🚀 Sniper Bot Started...")
 alert_msg = ""
 
-def check_stock(ticker, name=None):
+def check_stock(ticker, name=None, threshold=30):
     df = get_data(ticker)
     if df is not None and 'Close' in df.columns:
         try:
@@ -83,25 +77,29 @@ def check_stock(ticker, name=None):
             current_price = float(df['Close'].iloc[-1])
             display_name = name if name else ticker
             
-            # เกณฑ์: หุ้นไทย <= 30, กองทุน/นอก <= 45
-            threshold = 30 if ".BK" in ticker else 45
-            
+            # เช็คเงื่อนไขตามเกณฑ์ที่ส่งมา (30 หรือ 45)
             if current_rsi <= threshold:
-                return f"\n🔥 {display_name}\nPrice: {current_price:.2f}\nRSI: {current_rsi:.1f} (ถูก!)\n"
+                return f"\n🔥 {display_name}\nPrice: {current_price:.2f}\nRSI: {current_rsi:.1f} (เกณฑ์ {threshold})\n"
         except Exception as e:
-            print(f"⚠️ Error checking {ticker}: {e}")
+            print(f"⚠️ Error {ticker}: {e}")
     return ""
 
-# เช็คหุ้นไทย
-for symbol in THAI_STOCKS: alert_msg += check_stock(symbol)
-# เช็คกองทุน/หุ้นนอก
-for name, ticker in FUND_MAPPING.items(): alert_msg += check_stock(ticker, name)
+# 5.1 เช็คหุ้นไทย (เกณฑ์โหด 30)
+for symbol in THAI_STOCKS:
+    alert_msg += check_stock(symbol, threshold=30)
+
+# 5.2 เช็คกองทุน/ทองคำ (เกณฑ์ยืดหยุ่น 45)
+for name, ticker in FUND_MAPPING.items():
+    alert_msg += check_stock(ticker, name, threshold=45)
 
 # --- 6. ส่งข้อความ ---
 if alert_msg:
-    full_msg = f"🚨 **SNIPER ALERT** 🚨\n{alert_msg}"
+    full_msg = f"🚨 **SNIPER ALERT** 🚨\nพบจังหวะเข้าทำ!:{alert_msg}"
     print("Found opportunities!")
     send_telegram(full_msg)
     send_line(full_msg)
 else:
-    print("Market is quiet.")
+    # (Optional) ส่งบอกหน่อยว่าทำงานแล้ว แต่ไม่มีของ
+    # msg_quiet = "☕ ตลาดเงียบครับ (ไม่มีตัวไหนเข้าเกณฑ์)"
+    # send_line(msg_quiet) 
+    print("Market is quiet (No RSI match).")
