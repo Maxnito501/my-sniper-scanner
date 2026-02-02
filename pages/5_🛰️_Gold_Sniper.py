@@ -11,7 +11,7 @@ import requests
 # --- 1. ตั้งค่าหน้าเว็บ ---
 st.set_page_config(page_title="Gold Sniper System", page_icon="🛰️", layout="wide")
 
-st.title("🛰️ POLARIS: Gold Sniper (Trap Master V5.9)")
+st.title("🛰️ POLARIS: Gold Sniper (Trap Master V5.9 Fixed)")
 st.markdown("""
 **ระบบเทรดทองคำแบบวางกับดัก (Limit Order Strategy)**
 * 🧱 **ไม่ต้องเฝ้า:** คำนวณราคา แล้วไปตั้งรอในแอปทอง
@@ -47,7 +47,18 @@ def save_data(data):
 if 'gold_data' not in st.session_state:
     st.session_state.gold_data = load_data()
 
-# --- 3. Sidebar ตั้งค่า ---
+# --- 3. ฟังก์ชันแจ้งเตือน ---
+def notify_action(action_type, wood_num, price, detail=""):
+    msg = f"🛰️ **Gold Action**\n------------------\n⚡ **{action_type}** (ไม้ {wood_num})\n💰 ราคา: {price:,.0f} บาท\n📝 {detail}\n⏰ {datetime.now().strftime('%H:%M:%S')}"
+    if 'LINE_ACCESS_TOKEN' in st.secrets:
+        try:
+            url = 'https://api.line.me/v2/bot/message/push'
+            headers = {'Content-Type': 'application/json', 'Authorization': f"Bearer {st.secrets['LINE_ACCESS_TOKEN']}"}
+            data = {'to': st.secrets['LINE_USER_ID'], 'messages': [{'type': 'text', 'text': msg.replace('*', '')}]}
+            requests.post(url, headers=headers, json=data)
+        except: pass
+
+# --- 4. Sidebar ตั้งค่าราคา ---
 st.sidebar.header("⚙️ ตั้งค่าราคา")
 price_source = st.sidebar.radio("แหล่งที่มา:", ["🤖 Auto (Spot)", "✍️ Manual"])
 
@@ -86,16 +97,23 @@ gap_profit = st.sidebar.number_input("กำไรขั้นต่ำ/ไม�
 spread_buffer = st.sidebar.number_input("เผื่อ Spread ขายคืน", value=50.0, step=10.0)
 base_trade_size = st.sidebar.number_input("เงินต้นเริ่มแรก", value=10000, step=1000)
 
-# --- 4. ฟังก์ชันคำนวณ ---
+# --- 5. ฟังก์ชันคำนวณกราฟ ---
 def calculate_indicators(df):
+    # สร้าง Copy เพื่อไม่ให้กระทบ Cache เดิม
+    df = df.copy()
     delta = df['Close'].diff()
     gain = (delta.where(delta > 0, 0)).ewm(alpha=1/14, adjust=False).mean()
     loss = (-delta.where(delta < 0, 0)).ewm(alpha=1/14, adjust=False).mean()
     rs = gain / loss
     df['RSI'] = 100 - (100 / (1 + rs))
+    
+    # เพิ่ม EMA
+    df['EMA50'] = df['Close'].ewm(span=50, adjust=False).mean()
+    df['EMA200'] = df['Close'].ewm(span=200, adjust=False).mean()
+    
     return df
 
-# --- 5. Main Logic (Trap Calculation) ---
+# --- 6. Main Logic (Trap Calculation) ---
 # หาทุนไม้ล่าสุดที่ Active
 portfolio = st.session_state.gold_data['portfolio']
 last_active_wood = 0
@@ -112,8 +130,6 @@ trap_price = 0
 trap_reason = ""
 
 if next_wood == 1:
-    # ไม้ 1: ถ้าใช้ Auto ให้ดูราคาที่เหมาะสม (เช่น EMA หรือ แนวรับ)
-    # แต่เบื้องต้นให้ใช้ราคาตลาด - 100 บาท เป็นจุดต่อรอง
     trap_price = current_thb_baht - 100
     trap_reason = "ต่อราคาตลาดเล็กน้อย (ไม้เปิด)"
 elif next_wood <= 5:
@@ -121,14 +137,20 @@ elif next_wood <= 5:
     trap_price = last_entry_price - gap
     trap_reason = f"ระยะห่าง Grid {gap} บาท จากไม้ {last_active_wood}"
 
-# ปัดเศษราคาดักซื้อ
 trap_price = round(trap_price / 50) * 50
 
-# --- 6. Display ---
+# --- 7. Display (แก้บั๊ก RSI ตรงนี้) ---
+
+# 🛠️ FIX: เรียกคำนวณ Indicator ก่อนใช้งาน
+if df_gold is not None:
+    df_gold = calculate_indicators(df_gold)
+    current_rsi = df_gold['RSI'].iloc[-1]
+else:
+    current_rsi = 0.0
+
 c1, c2, c3, c4 = st.columns(4)
 c1.metric("โหมด", "Auto" if "Auto" in price_source else "Manual")
-rsi_val = df_gold['RSI'].iloc[-1] if df_gold is not None else 0
-c2.metric("RSI (1H)", f"{rsi_val:.1f}")
+c2.metric("RSI (1H)", f"{current_rsi:.1f}")
 c3.metric("ราคาทองไทย", f"{current_thb_baht:,.0f} ฿")
 current_capital = base_trade_size + st.session_state.gold_data.get('accumulated_profit', 0.0)
 c4.metric("เงินทุน (ทบต้น)", f"{current_capital:,.0f} ฿")
@@ -145,7 +167,7 @@ else:
 
 st.write("---")
 
-tab1, tab2 = st.tabs(["🔫 Sniper Board", "🧊 Vault"])
+tab1, tab2, tab3 = st.tabs(["🔫 Sniper Board", "🧊 Vault", "📈 Chart"])
 
 with tab1:
     st.subheader(f"🎯 เป้ากำไร: +{gap_profit} บาท/ไม้")
@@ -183,6 +205,7 @@ with tab1:
                                 'date': datetime.now().strftime("%Y-%m-%d %H:%M")
                             }
                             save_data(st.session_state.gold_data)
+                            notify_action(f"BUY Wood {i}", i, current_thb_baht)
                             st.rerun()
                 else:
                     target_sell = wood['entry_price'] + gap_profit + spread_buffer
@@ -195,6 +218,7 @@ with tab1:
                         st.session_state.gold_data['accumulated_profit'] += final_profit
                         st.session_state.gold_data['portfolio'][key] = {'status': 'EMPTY', 'entry_price': 0, 'grams': 0, 'date': None}
                         save_data(st.session_state.gold_data)
+                        notify_action(f"SELL Wood {i}", i, current_thb_baht, f"กำไร {final_profit:.0f}")
                         st.success(f"กำไร {final_profit:+.0f} บาท")
                         st.rerun()
 
@@ -208,3 +232,14 @@ with tab2:
             st.session_state.gold_data['accumulated_profit'] = 0
             save_data(st.session_state.gold_data)
             st.rerun()
+
+with tab3:
+    # 🛠️ FIX: ใช้ df_gold ที่คำนวณแล้วมาวาดกราฟ
+    if df_gold is not None:
+        st.subheader("📈 กราฟทองคำ (Spot USD)")
+        fig = go.Figure()
+        fig.add_trace(go.Candlestick(x=df_gold.index, open=df_gold['Open'], high=df_gold['High'], low=df_gold['Low'], close=df_gold['Close'], name='Price'))
+        fig.add_trace(go.Scatter(x=df_gold.index, y=df_gold['EMA50'], name='EMA 50', line=dict(color='orange', width=1)))
+        st.plotly_chart(fig, use_container_width=True)
+    else:
+        st.info("ไม่มีข้อมูลกราฟ (อาจอยู่ในโหมด Manual)")
