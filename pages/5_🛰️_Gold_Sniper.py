@@ -11,11 +11,11 @@ import requests
 # --- 1. ตั้งค่าหน้าเว็บ ---
 st.set_page_config(page_title="Gold Sniper System", page_icon="🛰️", layout="wide")
 
-st.title("🛰️ POLARIS: Gold Sniper (Grid System V5.8)")
+st.title("🛰️ POLARIS: Gold Sniper (Trap Master V5.9)")
 st.markdown("""
-**ระบบเทรดทองคำแบบ Grid (ระยะห่างคงที่)**
-* 🟢 **เข้าซื้อ:** เมื่อราคาลงมาถึงระยะที่ตั้งไว้ (เช่น ทุก -500 บาท)
-* 🔴 **ขายทำกำไร:** เมื่อราคาดีดขึ้นถึงระยะที่ตั้งไว้ (เช่น +500 บาท)
+**ระบบเทรดทองคำแบบวางกับดัก (Limit Order Strategy)**
+* 🧱 **ไม่ต้องเฝ้า:** คำนวณราคา แล้วไปตั้งรอในแอปทอง
+* 🏹 **ดักทางเจ้ามือ:** ซื้อที่แนวรับ ขายที่แนวต้าน
 """)
 st.write("---")
 
@@ -27,6 +27,7 @@ def load_data():
         try:
             with open(DB_FILE, 'r') as f:
                 data = json.load(f)
+                # Migration checks
                 if 'accumulated_profit' not in data: data['accumulated_profit'] = 0.0
                 if 'vault' not in data: data['vault'] = []
                 if 'portfolio' not in data: 
@@ -46,22 +47,13 @@ def save_data(data):
 if 'gold_data' not in st.session_state:
     st.session_state.gold_data = load_data()
 
-# --- 3. ฟังก์ชันแจ้งเตือน ---
-def notify_action(action_type, wood_num, price, detail=""):
-    msg = f"🛰️ **Gold Action**\n------------------\n⚡ **{action_type}** (ไม้ {wood_num})\n💰 ราคา: {price:,.0f} บาท\n📝 {detail}\n⏰ {datetime.now().strftime('%H:%M:%S')}"
-    if 'LINE_ACCESS_TOKEN' in st.secrets:
-        try:
-            url = 'https://api.line.me/v2/bot/message/push'
-            headers = {'Content-Type': 'application/json', 'Authorization': f"Bearer {st.secrets['LINE_ACCESS_TOKEN']}"}
-            data = {'to': st.secrets['LINE_USER_ID'], 'messages': [{'type': 'text', 'text': msg.replace('*', '')}]}
-            requests.post(url, headers=headers, json=data)
-        except: pass
-
-# --- 4. Sidebar ตั้งค่า (Grid Config) ---
+# --- 3. Sidebar ตั้งค่า ---
 st.sidebar.header("⚙️ ตั้งค่าราคา")
 price_source = st.sidebar.radio("แหล่งที่มา:", ["🤖 Auto (Spot)", "✍️ Manual"])
 
 current_thb_baht = 0.0 
+df_gold = None
+
 if price_source == "🤖 Auto (Spot)":
     @st.cache_data(ttl=60) 
     def get_market_data():
@@ -79,24 +71,22 @@ if price_source == "🤖 Auto (Spot)":
     
     if df_gold is not None:
         current_usd = float(df_gold['Close'].iloc[-1])
+        # สูตรราคาทองไทย
         current_thb_baht = round(((current_usd * fx_rate * 0.473) + premium) / 50) * 50
-        st.sidebar.success(f"ราคา: **{current_thb_baht:,.0f}**")
+        st.sidebar.success(f"ราคาตลาด: **{current_thb_baht:,.0f}**")
 else:
     manual_price = st.sidebar.number_input("ราคาทอง (บาทละ)", value=40500, step=50)
     current_thb_baht = manual_price
-    df_gold = None
 
 st.sidebar.markdown("---")
-st.sidebar.header("📏 ตั้งค่าระยะ (Grid)")
-# Config สำหรับระยะห่างและกำไร
-gap_buy_1_2 = st.sidebar.number_input("ห่างไม้ 1->2 (ลงกี่บาทซื้อ)", value=500, step=100)
-gap_buy_2_3 = st.sidebar.number_input("ห่างไม้ 2->3 (ลงกี่บาทซื้อ)", value=1000, step=100)
+st.sidebar.header("📏 ตั้งค่าระยะ Grid")
+gap_buy_1_2 = st.sidebar.number_input("ห่างไม้ 1->2 (บาท)", value=500, step=100)
+gap_buy_2_3 = st.sidebar.number_input("ห่างไม้ 2->3 (บาท)", value=1000, step=100)
 gap_profit = st.sidebar.number_input("กำไรขั้นต่ำ/ไม้ (บาท)", value=500, step=100)
 spread_buffer = st.sidebar.number_input("เผื่อ Spread ขายคืน", value=50.0, step=10.0)
-
 base_trade_size = st.sidebar.number_input("เงินต้นเริ่มแรก", value=10000, step=1000)
 
-# --- 5. ฟังก์ชันคำนวณกราฟ ---
+# --- 4. ฟังก์ชันคำนวณ ---
 def calculate_indicators(df):
     delta = df['Close'].diff()
     gain = (delta.where(delta > 0, 0)).ewm(alpha=1/14, adjust=False).mean()
@@ -105,85 +95,63 @@ def calculate_indicators(df):
     df['RSI'] = 100 - (100 / (1 + rs))
     return df
 
-# --- 6. วิเคราะห์สัญญาณ (Grid Logic) ---
-def analyze_grid(df, current_price, portfolio):
-    rsi = df['RSI'].iloc[-1] if df is not None else 50
-    advice = "⏳ WAIT (ราคายังไม่เข้าเกณฑ์)"
-    color = "#f3f4f6"
-    text_color = "black"
+# --- 5. Main Logic (Trap Calculation) ---
+# หาทุนไม้ล่าสุดที่ Active
+portfolio = st.session_state.gold_data['portfolio']
+last_active_wood = 0
+last_entry_price = 0
 
-    # เช็คสถานะการขาย (Take Profit)
-    for i in range(1, 6):
-        wood = portfolio[str(i)]
-        if wood['status'] == 'ACTIVE':
-            # เป้าขาย = ทุน + กำไรที่ตั้งไว้ + ค่าสเปรด
-            target_sell = wood['entry_price'] + gap_profit + spread_buffer
-            if current_price >= target_sell:
-                return f"💰 SELL WOOD {i}! (ถึงเป้า {target_sell:,.0f})", "#dcfce7", "#166534"
+for i in range(1, 6):
+    if portfolio[str(i)]['status'] == 'ACTIVE':
+        last_active_wood = i
+        last_entry_price = portfolio[str(i)]['entry_price']
 
-    # เช็คสถานะการซื้อ (Buy Next Wood)
-    # ไม้ 1: ดู RSI (เหมือนเดิม)
-    if portfolio['1']['status'] == 'EMPTY':
-        if rsi <= 45: 
-            advice = f"🚀 FIRE WOOD 1 (RSI {rsi:.0f} สวย)"
-            color = "#dbeafe"
-        elif rsi <= 30:
-            advice = f"💎 SNIPER WOOD 1 (RSI {rsi:.0f} ถูกมาก)"
-            color = "#bfdbfe"
-    else:
-        # ไม้ 2-5: ดูระยะห่างราคา (Grid Gap)
-        # หาไม้ล่าสุดที่ถืออยู่
-        last_active_idx = 0
-        for i in range(1, 6):
-            if portfolio[str(i)]['status'] == 'ACTIVE': last_active_idx = i
-        
-        next_wood = last_active_idx + 1
-        
-        if next_wood <= 5:
-            last_entry = portfolio[str(last_active_idx)]['entry_price']
-            
-            # กำหนดระยะห่างตามไม้
-            gap_needed = gap_buy_1_2 if next_wood == 2 else gap_buy_2_3
-            if next_wood >= 4: gap_needed = 1500 # ไม้ลึกๆ ห่างเยอะหน่อย
-            
-            target_buy = last_entry - gap_needed
-            
-            if current_price <= target_buy:
-                advice = f"🛡️ FIRE WOOD {next_wood} (ราคาลงครบ {gap_needed} บาท)"
-                color = "#fef9c3"
-            else:
-                advice = f"⏳ รอซื้อไม้ {next_wood} ที่ราคา {target_buy:,.0f} (ตอนนี้ {current_price:,.0f})"
+# คำนวณจุดดักซื้อ (Trap Price)
+next_wood = last_active_wood + 1
+trap_price = 0
+trap_reason = ""
 
-    return advice, color, text_color
+if next_wood == 1:
+    # ไม้ 1: ถ้าใช้ Auto ให้ดูราคาที่เหมาะสม (เช่น EMA หรือ แนวรับ)
+    # แต่เบื้องต้นให้ใช้ราคาตลาด - 100 บาท เป็นจุดต่อรอง
+    trap_price = current_thb_baht - 100
+    trap_reason = "ต่อราคาตลาดเล็กน้อย (ไม้เปิด)"
+elif next_wood <= 5:
+    gap = gap_buy_1_2 if next_wood == 2 else (gap_buy_2_3 if next_wood == 3 else 1500)
+    trap_price = last_entry_price - gap
+    trap_reason = f"ระยะห่าง Grid {gap} บาท จากไม้ {last_active_wood}"
 
-# --- 7. Main App ---
-if price_source == "🤖 Auto (Spot)" and df_gold is not None:
-    df_gold = calculate_indicators(df_gold)
-    current_rsi = df_gold['RSI'].iloc[-1]
-else:
-    current_rsi = 0
+# ปัดเศษราคาดักซื้อ
+trap_price = round(trap_price / 50) * 50
 
-advice, bg_col, txt_col = analyze_grid(df_gold, current_thb_baht, st.session_state.gold_data['portfolio'])
-
-# Dashboard
+# --- 6. Display ---
 c1, c2, c3, c4 = st.columns(4)
-c1.metric("โหมด", "Manual" if "Manual" in price_source else "Auto")
-c2.metric("RSI (1H)", f"{current_rsi:.1f}")
+c1.metric("โหมด", "Auto" if "Auto" in price_source else "Manual")
+rsi_val = df_gold['RSI'].iloc[-1] if df_gold is not None else 0
+c2.metric("RSI (1H)", f"{rsi_val:.1f}")
 c3.metric("ราคาทองไทย", f"{current_thb_baht:,.0f} ฿")
 current_capital = base_trade_size + st.session_state.gold_data.get('accumulated_profit', 0.0)
 c4.metric("เงินทุน (ทบต้น)", f"{current_capital:,.0f} ฿")
 
-st.markdown(f"<div style='background-color:{bg_col};padding:10px;border-radius:5px;text-align:center;color:{txt_col};'><b>🤖 {advice}</b></div>", unsafe_allow_html=True)
+# กล่องแนะนำการวางกับดัก
+if next_wood <= 5:
+    st.info(f"""
+    📢 **แผนการรบสำหรับไม้ที่ {next_wood}**
+    ให้ไปตั้งซื้อล่วงหน้า (Limit Order) ที่ราคา: **{trap_price:,.0f} บาท**
+    *เหตุผล: {trap_reason}*
+    """)
+else:
+    st.error("กระสุนหมดครบ 5 ไม้แล้ว! หยุดซื้อและรอขายอย่างเดียว")
+
 st.write("---")
 
-# Operations Tabs
 tab1, tab2 = st.tabs(["🔫 Sniper Board", "🧊 Vault"])
 
 with tab1:
     st.subheader(f"🎯 เป้ากำไร: +{gap_profit} บาท/ไม้")
     for i in range(1, 6):
         key = str(i)
-        wood = st.session_state.gold_data['portfolio'][key]
+        wood = portfolio[key]
         
         with st.container(border=True):
             col_id, col_info, col_btn = st.columns([1, 3, 2])
@@ -192,11 +160,8 @@ with tab1:
             with col_info:
                 if wood['status'] == 'EMPTY':
                     st.caption("ว่าง")
-                    # โชว์เป้ารอซื้อ
-                    if i > 1 and st.session_state.gold_data['portfolio'][str(i-1)]['status'] == 'ACTIVE':
-                         last_p = st.session_state.gold_data['portfolio'][str(i-1)]['entry_price']
-                         gap = gap_buy_1_2 if i==2 else (gap_buy_2_3 if i==3 else 1500)
-                         st.info(f"🎯 รอช้อนที่: **{last_p - gap:,.0f}**")
+                    if i == next_wood:
+                        st.markdown(f"📍 **รอตั้งรับที่:** `{trap_price:,.0f}`")
                 else:
                     target_sell = wood['entry_price'] + gap_profit + spread_buffer
                     curr_profit = (current_thb_baht - spread_buffer - wood['entry_price']) * wood['grams']
@@ -206,9 +171,11 @@ with tab1:
 
             with col_btn:
                 if wood['status'] == 'EMPTY':
-                    prev_active = True if i == 1 else st.session_state.gold_data['portfolio'][str(i-1)]['status'] == 'ACTIVE'
+                    # เช็คเงื่อนไข
+                    prev_active = True if i == 1 else portfolio[str(i-1)]['status'] == 'ACTIVE'
                     if prev_active:
-                        if st.button(f"🔴 ยิงไม้ {i}", key=f"buy_{i}", use_container_width=True):
+                        # ปุ่มยิงแบบ Manual (ถ้าราคาลงมาถึงแล้วกดเลย)
+                        if st.button(f"🔴 ยิงไม้ {i} (ที่ {current_thb_baht})", key=f"buy_{i}", use_container_width=True):
                             st.session_state.gold_data['portfolio'][key] = {
                                 'status': 'ACTIVE',
                                 'entry_price': current_thb_baht,
@@ -216,7 +183,6 @@ with tab1:
                                 'date': datetime.now().strftime("%Y-%m-%d %H:%M")
                             }
                             save_data(st.session_state.gold_data)
-                            notify_action(f"BUY Wood {i}", i, current_thb_baht)
                             st.rerun()
                 else:
                     target_sell = wood['entry_price'] + gap_profit + spread_buffer
@@ -229,7 +195,6 @@ with tab1:
                         st.session_state.gold_data['accumulated_profit'] += final_profit
                         st.session_state.gold_data['portfolio'][key] = {'status': 'EMPTY', 'entry_price': 0, 'grams': 0, 'date': None}
                         save_data(st.session_state.gold_data)
-                        notify_action(f"SELL Wood {i}", i, current_thb_baht, f"กำไร {final_profit:.0f}")
                         st.success(f"กำไร {final_profit:+.0f} บาท")
                         st.rerun()
 
