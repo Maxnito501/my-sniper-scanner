@@ -20,14 +20,31 @@ st.markdown("""
 """)
 st.write("---")
 
-# --- 2. ระบบจัดการข้อมูล (Database) ---
+# --- 2. ระบบจัดการข้อมูล (Database & Fix) ---
 DB_FILE = 'gold_data.json'
 
 def load_data():
+    # พยายามโหลดจากไฟล์
     if os.path.exists(DB_FILE):
         try:
-            with open(DB_FILE, 'r') as f: return json.load(f)
+            with open(DB_FILE, 'r') as f:
+                data = json.load(f)
+                
+                # 🛠️ FIX: ตรวจสอบและเติมค่าที่ขาด (Migration)
+                # ถ้าไฟล์เก่าไม่มี key พวกนี้ ให้เติมค่าเริ่มต้นเข้าไป
+                if 'accumulated_profit' not in data:
+                    data['accumulated_profit'] = 0.0
+                
+                if 'vault' not in data:
+                    data['vault'] = []
+                    
+                if 'portfolio' not in data:
+                    data['portfolio'] = {str(i): {'status': 'EMPTY', 'entry_price': 0.0, 'grams': 0.0, 'date': None} for i in range(1, 6)}
+                
+                return data
         except: pass
+    
+    # ถ้าไม่มีไฟล์ หรือไฟล์เสีย ให้สร้างใหม่
     return {
         'portfolio': {str(i): {'status': 'EMPTY', 'entry_price': 0.0, 'grams': 0.0, 'date': None} for i in range(1, 6)},
         'vault': [],
@@ -61,8 +78,7 @@ price_source = st.sidebar.radio("แหล่งที่มาราคา:", [
 current_thb_baht = 0.0 # ตัวแปรราคากลาง
 
 if price_source == "🤖 Auto (คำนวณจาก Spot)":
-    # ส่วนคำนวณอัตโนมัติ (เหมือนเดิม)
-    @st.cache_data(ttl=60) # ลด Cache เหลือ 1 นาที
+    @st.cache_data(ttl=60) 
     def get_market_data():
         try:
             fx = yf.Ticker("THB=X").history(period="1d")['Close'].iloc[-1]
@@ -80,19 +96,17 @@ if price_source == "🤖 Auto (คำนวณจาก Spot)":
     
     if df_gold is not None:
         current_usd = float(df_gold['Close'].iloc[-1])
-        # สูตร: (Spot * FX * 0.473) + Premium
         current_thb_baht = round(((current_usd * fx_rate * 0.473) + premium) / 50) * 50
         st.sidebar.success(f"ราคาคำนวณ: **{current_thb_baht:,.0f}**")
     else:
         st.sidebar.error("ดึงข้อมูลไม่ได้")
 
 else:
-    # ส่วนระบุเอง (Manual)
     st.sidebar.markdown("---")
     st.sidebar.caption("✍️ กรอกราคาจริงที่เห็นในแอป")
     manual_price = st.sidebar.number_input("ราคาทอง (บาทละ)", value=40500, step=50, help="ดูราคา 'ซื้อออก' จากแอป GOLD NOW แล้วมากรอกที่นี่")
     current_thb_baht = manual_price
-    df_gold = None # ในโหมด Manual อาจจะไม่มีกราฟ Realtime แต่เราเน้นบันทึก
+    df_gold = None
 
 # ตั้งเป้ากำไร
 st.sidebar.markdown("---")
@@ -100,7 +114,7 @@ spread_buffer = st.sidebar.number_input("Spread (ส่วนต่างซื�
 base_trade_size = st.sidebar.number_input("เงินต้นเริ่มแรก", value=10000, step=1000)
 target_profit_amt = st.sidebar.number_input("เอากำไรกี่บาท/ไม้?", value=200, step=50)
 
-# --- 5. ฟังก์ชันคำนวณกราฟ (ถ้ามีข้อมูล) ---
+# --- 5. ฟังก์ชันคำนวณกราฟ ---
 def calculate_indicators(df):
     delta = df['Close'].diff()
     gain = (delta.where(delta > 0, 0)).ewm(alpha=1/14, adjust=False).mean()
@@ -122,9 +136,7 @@ if price_source == "🤖 Auto (คำนวณจาก Spot)" and df_gold is no
     ema200 = df_gold['EMA200'].iloc[-1]
     last_close = df_gold['Close'].iloc[-1]
     
-    # Logic AI
-    if current_thb_baht > 0: # ป้องกันหารศูนย์
-         # (Logic เดิม...)
+    if current_thb_baht > 0:
          if st.session_state.gold_data['portfolio']['1']['status'] == 'EMPTY':
              if last_close > ema200 and current_rsi <= 45: 
                  advice, bg_col = f"🚀 FIRE WOOD 1 (RSI {current_rsi:.0f})", "#dbeafe"
@@ -139,7 +151,8 @@ c1.metric("โหมดราคา", "Manual" if price_source == "✍️ Manual
 c2.metric("RSI (1H)", f"{current_rsi:.1f}" if current_rsi > 0 else "-")
 c3.metric("ราคาทองไทย (ที่ใช้)", f"{current_thb_baht:,.0f} ฿")
 
-current_capital = base_trade_size + st.session_state.gold_data['accumulated_profit']
+# 🛠️ FIX: ใช้ .get() เพื่อป้องกัน KeyError ในกรณีที่ session state ยังไม่อัปเดต
+current_capital = base_trade_size + st.session_state.gold_data.get('accumulated_profit', 0.0)
 c4.metric("เงินทุน (ทบต้น)", f"{current_capital:,.0f} ฿")
 
 if price_source == "🤖 Auto (คำนวณจาก Spot)":
@@ -171,18 +184,17 @@ with tab1:
 
             with col_btn:
                 if wood['status'] == 'EMPTY':
-                    # เช็คว่าไม้ก่อนหน้ายิงหรือยัง
                     prev_active = True if i == 1 else st.session_state.gold_data['portfolio'][str(i-1)]['status'] == 'ACTIVE'
                     if prev_active:
                         if st.button(f"🔴 ยิงไม้ {i}", key=f"buy_{i}", use_container_width=True):
                             st.session_state.gold_data['portfolio'][key] = {
                                 'status': 'ACTIVE',
                                 'entry_price': current_thb_baht,
-                                'grams': current_capital / current_thb_baht, # คำนวณจำนวนทองที่ได้
+                                'grams': current_capital / current_thb_baht,
                                 'date': datetime.now().strftime("%Y-%m-%d %H:%M")
                             }
                             save_data(st.session_state.gold_data)
-                            notify_action("BUY (Manual Price)" if "Manual" in price_source else "BUY (Auto Price)", i, current_thb_baht)
+                            notify_action("BUY (Manual)" if "Manual" in price_source else "BUY (Auto)", i, current_thb_baht)
                             st.rerun()
                 else:
                     btn_label = f"💰 ขายรับตังค์" if curr_profit >= target_profit_amt else "ขาย (ยังไม่ถึงเป้า)"
@@ -197,7 +209,11 @@ with tab1:
                             'profit': final_profit,
                             'date': datetime.now().strftime("%Y-%m-%d %H:%M")
                         })
+                        # อัปเดตกำไรสะสม
+                        if 'accumulated_profit' not in st.session_state.gold_data:
+                            st.session_state.gold_data['accumulated_profit'] = 0.0
                         st.session_state.gold_data['accumulated_profit'] += final_profit
+                        
                         st.session_state.gold_data['portfolio'][key] = {'status': 'EMPTY', 'entry_price': 0, 'grams': 0, 'date': None}
                         save_data(st.session_state.gold_data)
                         notify_action("SELL (Take Profit)", i, current_thb_baht, f"กำไร {final_profit:.0f} บาท")
