@@ -29,7 +29,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.title("🛰️ POLARIS: Gold Sniper (Ultimate V6.0)")
+st.title("🛰️ POLARIS: Gold Sniper (Ultimate V6.1 Fixed)")
 st.markdown("**ระบบเทรดทองคำส่วนตัว: แจ้งเตือน + แนวรับต้านอัตโนมัติ + กราฟ 3 เดือน**")
 st.write("---")
 
@@ -42,15 +42,23 @@ def load_data():
         try:
             with open(DB_FILE, 'r', encoding='utf-8') as f:
                 data = json.load(f)
-                if 'accumulated_profit' not in data: data['accumulated_profit'] = 0.0
-                if 'vault' not in data: data['vault'] = []
+                if 'accumulated_profit' not in data: 
+                    data['accumulated_profit'] = 0.0
+                if 'vault' not in data: 
+                    data['vault'] = []
                 if 'portfolio' not in data: 
                     data['portfolio'] = {str(i): {'status': 'EMPTY', 'entry_price': 0.0, 'grams': 0.0, 'date': None} for i in range(1, 6)}
                 return data
-        except: 
-            if os.path.exists(BAK_FILE): # กู้คืน
-                try: with open(BAK_FILE, 'r', encoding='utf-8') as f: return json.load(f)
-                except: pass
+        except:
+            # กู้คืนจาก backup ถ้าไฟล์หลักพัง
+            if os.path.exists(BAK_FILE): 
+                try: 
+                    with open(BAK_FILE, 'r', encoding='utf-8') as f: 
+                        return json.load(f)
+                except: 
+                    pass
+    
+    # ค่าเริ่มต้น
     return {
         'portfolio': {str(i): {'status': 'EMPTY', 'entry_price': 0.0, 'grams': 0.0, 'date': None} for i in range(1, 6)},
         'vault': [],
@@ -58,10 +66,16 @@ def load_data():
     }
 
 def save_data(data):
+    # สร้าง Backup
     if os.path.exists(DB_FILE): 
-        try: shutil.copy(DB_FILE, BAK_FILE)
-        except: pass
-    with open(DB_FILE, 'w', encoding='utf-8') as f: json.dump(data, f, indent=4, ensure_ascii=False)
+        try: 
+            shutil.copy(DB_FILE, BAK_FILE)
+        except: 
+            pass
+            
+    # บันทึกไฟล์
+    with open(DB_FILE, 'w', encoding='utf-8') as f: 
+        json.dump(data, f, indent=4, ensure_ascii=False)
 
 if 'gold_data' not in st.session_state:
     st.session_state.gold_data = load_data()
@@ -90,7 +104,7 @@ def notify_action(action_type, wood_num, price, detail=""):
 st.sidebar.header("⚙️ ตั้งค่าราคา")
 price_source = st.sidebar.radio("แหล่งที่มา:", ["🤖 Auto (Spot)", "✍️ Manual (ระบุเอง)"])
 
-# ฟังก์ชันคำนวณกราฟ (เพิ่ม EMA & Support/Resistance)
+# ฟังก์ชันคำนวณกราฟ
 def calculate_indicators(df):
     delta = df['Close'].diff()
     gain = (delta.where(delta > 0, 0)).ewm(alpha=1/14, adjust=False).mean()
