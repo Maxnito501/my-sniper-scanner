@@ -3,7 +3,7 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
-from plotly.subplots import make_subplots # เพิ่มตัวช่วยสร้างกราฟย่อย
+from plotly.subplots import make_subplots
 from datetime import datetime
 import json
 import os
@@ -30,7 +30,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.title("🛰️ POLARIS: Gold Sniper (RSI Chart V6.2)")
+st.title("🛰️ POLARIS: Gold Sniper (RSI Chart V6.3 Fixed)")
 st.markdown("**ระบบเทรดทองคำส่วนตัว: เพิ่มกราฟ RSI เพื่อจับจังหวะด้วยตา**")
 st.write("---")
 
@@ -83,12 +83,9 @@ def notify_action(action_type, wood_num, price, detail=""):
             requests.post(tg_url, json={"chat_id": st.secrets['telegram_chat_id'], "text": msg, "parse_mode": "Markdown"})
         except: pass
 
-# --- 4. Sidebar ---
-st.sidebar.header("⚙️ ตั้งค่าราคา")
-price_source = st.sidebar.radio("แหล่งที่มา:", ["🤖 Auto (Spot)", "✍️ Manual (ระบุเอง)"])
-
-# ฟังก์ชันคำนวณกราฟ
+# --- 4. ฟังก์ชันคำนวณและดึงข้อมูล ---
 def calculate_indicators(df):
+    df = df.copy() # ป้องกัน SettingWithCopyWarning
     delta = df['Close'].diff()
     gain = (delta.where(delta > 0, 0)).ewm(alpha=1/14, adjust=False).mean()
     loss = (-delta.where(delta < 0, 0)).ewm(alpha=1/14, adjust=False).mean()
@@ -103,17 +100,28 @@ def find_support_resistance(df):
     recent_high = df['High'].tail(20).max()
     return recent_low, recent_high
 
+# เปลี่ยนชื่อฟังก์ชันเพื่อ Clear Cache
 @st.cache_data(ttl=60)
-def get_market_data():
+def get_market_data_v2(): 
     try:
         fx = yf.Ticker("THB=X").history(period="1d")['Close'].iloc[-1]
         df = yf.download("GC=F", period="3mo", interval="1h", progress=False)
-        if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
-        if len(df) > 0: df = calculate_indicators(df)
+        
+        # จัดการ MultiIndex
+        if isinstance(df.columns, pd.MultiIndex): 
+            df.columns = df.columns.get_level_values(0)
+            
+        if len(df) > 0: 
+            df = calculate_indicators(df)
+            
         return float(fx), df
     except: return 34.50, None
 
-auto_fx, df_gold = get_market_data()
+# --- 5. Sidebar ตั้งค่า ---
+st.sidebar.header("⚙️ ตั้งค่าราคา")
+price_source = st.sidebar.radio("แหล่งที่มา:", ["🤖 Auto (Spot)", "✍️ Manual (ระบุเอง)"])
+
+auto_fx, df_gold = get_market_data_v2() # เรียกฟังก์ชันใหม่
 current_thb_baht = 0.0 
 current_rsi = 0.0
 support_usd, resistance_usd = 0.0, 0.0
@@ -123,7 +131,7 @@ if price_source == "🤖 Auto (Spot)":
     fx_rate = st.sidebar.number_input("USD/THB", value=auto_fx, format="%.2f")
     premium = st.sidebar.number_input("Premium (+)", value=100.0, step=10.0)
     
-    if df_gold is not None:
+    if df_gold is not None and 'RSI' in df_gold.columns: # เช็คก่อนว่ามี RSI ไหม
         current_usd = float(df_gold['Close'].iloc[-1])
         current_thb_baht = round(((current_usd * fx_rate * 0.473) + premium) / 50) * 50
         current_rsi = df_gold['RSI'].iloc[-1]
@@ -133,7 +141,7 @@ else:
     st.sidebar.caption("กรอกราคาซื้อขายจริง")
     manual_price = st.sidebar.number_input("ราคาทอง (บาทละ)", value=40500, step=50)
     current_thb_baht = manual_price
-    if df_gold is not None: 
+    if df_gold is not None and 'RSI' in df_gold.columns: 
         current_rsi = df_gold['RSI'].iloc[-1]
         support_usd, resistance_usd = find_support_resistance(df_gold)
 
@@ -149,7 +157,7 @@ gap_profit = st.sidebar.number_input("กำไรขั้นต่ำ/ไม�
 spread_buffer = st.sidebar.number_input("เผื่อ Spread", value=50.0, step=10.0)
 base_trade_size = st.sidebar.number_input("เงินต้นเริ่มแรก", value=10000, step=1000)
 
-# --- 5. AI Strategy Advisor ---
+# --- 6. AI Strategy Advisor ---
 st.subheader("🧠 คำแนะนำกลยุทธ์ (AI Strategy)")
 
 if df_gold is not None:
@@ -180,7 +188,7 @@ if df_gold is not None:
             invest_msg, invest_class = "🐻 **CAUTION**: หลุดแนวรับสำคัญ", "sell-sig"
         st.markdown(f'<div class="sig-box {invest_class}">{invest_msg}</div>', unsafe_allow_html=True)
 
-# --- 6. Logic พอร์ต ---
+# --- 7. Logic พอร์ต ---
 portfolio = st.session_state.gold_data['portfolio']
 last_active_wood = 0
 last_entry_price = 0
@@ -203,7 +211,7 @@ elif next_wood <= 5:
 
 trap_price = round(trap_price / 50) * 50
 
-# --- 7. Dashboard ---
+# --- 8. Dashboard ---
 c1, c2, c3, c4 = st.columns(4)
 c1.metric("โหมด", "Auto" if "Auto" in price_source else "Manual")
 c2.metric("สถานะพอร์ต", f"{last_active_wood}/5 ไม้")
@@ -280,12 +288,10 @@ with tab3:
     if df_gold is not None:
         st.subheader("📈 กราฟทองคำ & RSI (1 Hour)")
         
-        # สร้างกราฟ 2 ชั้น (ราคา + RSI)
         fig = make_subplots(rows=2, cols=1, shared_xaxes=True, 
                             vertical_spacing=0.05, row_heights=[0.7, 0.3],
                             subplot_titles=("Price Action", "RSI Indicator"))
 
-        # 1. กราฟราคา
         fig.add_trace(go.Candlestick(x=df_gold.index, open=df_gold['Open'], high=df_gold['High'],
                         low=df_gold['Low'], close=df_gold['Close'], name='Price'), row=1, col=1)
         fig.add_trace(go.Scatter(x=df_gold.index, y=df_gold['EMA50'], name='EMA 50', line=dict(color='orange', width=1)), row=1, col=1)
@@ -295,20 +301,13 @@ with tab3:
             fig.add_hline(y=support_usd, line_dash="dot", line_color="green", annotation_text="Support", row=1, col=1)
             fig.add_hline(y=resistance_usd, line_dash="dot", line_color="red", annotation_text="Resistance", row=1, col=1)
 
-        # 2. กราฟ RSI
         fig.add_trace(go.Scatter(x=df_gold.index, y=df_gold['RSI'], name='RSI', line=dict(color='purple', width=2)), row=2, col=1)
-        
-        # เส้น RSI Zone
         fig.add_hline(y=70, line_dash="dot", line_color="red", row=2, col=1)
         fig.add_hline(y=30, line_dash="dot", line_color="green", row=2, col=1)
-        
-        # Highlight โซนปลอดภัย (30-70)
         fig.add_hrect(y0=30, y1=70, line_width=0, fillcolor="gray", opacity=0.1, row=2, col=1)
 
         fig.update_layout(height=600, xaxis_rangeslider_visible=False, showlegend=True)
         st.plotly_chart(fig, use_container_width=True)
-        
-        st.info("💡 **วิธีดู:** ถ้าเส้น RSI (สีม่วงด้านล่าง) จิ้มลงต่ำกว่าเส้นประสีเขียว (30) แปลว่า **'ของถูก'** เตรียมกระสุนได้เลย!")
     else: st.error("โหลดกราฟไม่ได้")
 
 st.markdown("<div class='footer'>🛠️ Engineered by <b>โบ้ 50</b></div>", unsafe_allow_html=True)
