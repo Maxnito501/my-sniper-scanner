@@ -3,6 +3,7 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
+from plotly.subplots import make_subplots # เพิ่มตัวช่วยสร้างกราฟย่อย
 from datetime import datetime
 import json
 import os
@@ -29,11 +30,11 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.title("🛰️ POLARIS: Gold Sniper (Ultimate V6.1 Fixed)")
-st.markdown("**ระบบเทรดทองคำส่วนตัว: แจ้งเตือน + แนวรับต้านอัตโนมัติ + กราฟ 3 เดือน**")
+st.title("🛰️ POLARIS: Gold Sniper (RSI Chart V6.2)")
+st.markdown("**ระบบเทรดทองคำส่วนตัว: เพิ่มกราฟ RSI เพื่อจับจังหวะด้วยตา**")
 st.write("---")
 
-# --- 2. ระบบจัดการข้อมูล (Safe Database) ---
+# --- 2. ระบบจัดการข้อมูล ---
 DB_FILE = 'gold_data.json'
 BAK_FILE = 'gold_data.bak'
 
@@ -42,23 +43,15 @@ def load_data():
         try:
             with open(DB_FILE, 'r', encoding='utf-8') as f:
                 data = json.load(f)
-                if 'accumulated_profit' not in data: 
-                    data['accumulated_profit'] = 0.0
-                if 'vault' not in data: 
-                    data['vault'] = []
+                if 'accumulated_profit' not in data: data['accumulated_profit'] = 0.0
+                if 'vault' not in data: data['vault'] = []
                 if 'portfolio' not in data: 
                     data['portfolio'] = {str(i): {'status': 'EMPTY', 'entry_price': 0.0, 'grams': 0.0, 'date': None} for i in range(1, 6)}
                 return data
-        except:
-            # กู้คืนจาก backup ถ้าไฟล์หลักพัง
-            if os.path.exists(BAK_FILE): 
-                try: 
-                    with open(BAK_FILE, 'r', encoding='utf-8') as f: 
-                        return json.load(f)
-                except: 
-                    pass
-    
-    # ค่าเริ่มต้น
+        except: 
+            if os.path.exists(BAK_FILE):
+                try: with open(BAK_FILE, 'r', encoding='utf-8') as f: return json.load(f)
+                except: pass
     return {
         'portfolio': {str(i): {'status': 'EMPTY', 'entry_price': 0.0, 'grams': 0.0, 'date': None} for i in range(1, 6)},
         'vault': [],
@@ -66,41 +59,31 @@ def load_data():
     }
 
 def save_data(data):
-    # สร้าง Backup
     if os.path.exists(DB_FILE): 
-        try: 
-            shutil.copy(DB_FILE, BAK_FILE)
-        except: 
-            pass
-            
-    # บันทึกไฟล์
-    with open(DB_FILE, 'w', encoding='utf-8') as f: 
-        json.dump(data, f, indent=4, ensure_ascii=False)
+        try: shutil.copy(DB_FILE, BAK_FILE)
+        except: pass
+    with open(DB_FILE, 'w', encoding='utf-8') as f: json.dump(data, f, indent=4, ensure_ascii=False)
 
 if 'gold_data' not in st.session_state:
     st.session_state.gold_data = load_data()
 
-# --- 3. ฟังก์ชันแจ้งเตือน (เฉพาะเวอร์ชันส่วนตัว) ---
+# --- 3. แจ้งเตือน ---
 def notify_action(action_type, wood_num, price, detail=""):
     msg = f"🛰️ **Gold Action**\n------------------\n⚡ **{action_type}** (ไม้ {wood_num})\n💰 ราคา: {price:,.0f} บาท\n📝 {detail}\n⏰ {datetime.now().strftime('%H:%M:%S')}"
-    
-    # ส่ง LINE
-    if 'LINE_ACCESS_TOKEN' in st.secrets and 'LINE_USER_ID' in st.secrets:
+    if 'LINE_ACCESS_TOKEN' in st.secrets:
         try:
             url = 'https://api.line.me/v2/bot/message/push'
             headers = {'Content-Type': 'application/json', 'Authorization': f"Bearer {st.secrets['LINE_ACCESS_TOKEN']}"}
             data = {'to': st.secrets['LINE_USER_ID'], 'messages': [{'type': 'text', 'text': msg.replace('*', '')}]}
             requests.post(url, headers=headers, json=data)
         except: pass
-
-    # ส่ง Telegram
-    if 'telegram_token' in st.secrets and 'telegram_chat_id' in st.secrets:
+    if 'telegram_token' in st.secrets:
         try:
             tg_url = f"https://api.telegram.org/bot{st.secrets['telegram_token']}/sendMessage"
             requests.post(tg_url, json={"chat_id": st.secrets['telegram_chat_id'], "text": msg, "parse_mode": "Markdown"})
         except: pass
 
-# --- 4. Sidebar ตั้งค่า ---
+# --- 4. Sidebar ---
 st.sidebar.header("⚙️ ตั้งค่าราคา")
 price_source = st.sidebar.radio("แหล่งที่มา:", ["🤖 Auto (Spot)", "✍️ Manual (ระบุเอง)"])
 
@@ -124,7 +107,6 @@ def find_support_resistance(df):
 def get_market_data():
     try:
         fx = yf.Ticker("THB=X").history(period="1d")['Close'].iloc[-1]
-        # ดึง 3 เดือน เพื่อเส้น EMA แม่นยำ
         df = yf.download("GC=F", period="3mo", interval="1h", progress=False)
         if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
         if len(df) > 0: df = calculate_indicators(df)
@@ -180,13 +162,13 @@ if df_gold is not None:
         st.markdown("#### ⚡ สายเก็งกำไร (Sniper)")
         sniper_msg, sniper_class = "", ""
         if current_rsi <= 30:
-            sniper_msg, sniper_class = f"💎 **FIRE!**: ของถูกมาก (RSI {current_rsi:.0f})", "buy-sig"
+            sniper_msg, sniper_class = f"💎 **FIRE!**: RSI {current_rsi:.0f} ต่ำมาก (ซื้อสวน)", "buy-sig"
         elif current_rsi <= 45 and last_close > ema200:
-            sniper_msg, sniper_class = f"🛒 **BUY DIP**: ย่อตัวขาขึ้น (RSI {current_rsi:.0f})", "buy-sig"
+            sniper_msg, sniper_class = f"🛒 **BUY DIP**: RSI {current_rsi:.0f} ย่อตัวสวย", "buy-sig"
         elif current_rsi >= 75:
-            sniper_msg, sniper_class = f"💰 **SELL**: แพงเกินไป (RSI {current_rsi:.0f})", "sell-sig"
+            sniper_msg, sniper_class = f"💰 **SELL**: RSI {current_rsi:.0f} แพงแล้ว", "sell-sig"
         else:
-            sniper_msg, sniper_class = f"⏳ **WAIT**: ราคากลางๆ", "wait-sig"
+            sniper_msg, sniper_class = f"⏳ **WAIT**: RSI {current_rsi:.0f} กลางๆ (ไม่ชัด)", "wait-sig"
         st.markdown(f'<div class="sig-box {sniper_class}">{sniper_msg}</div>', unsafe_allow_html=True)
 
     with col_investor:
@@ -236,7 +218,7 @@ else:
 
 st.write("---")
 
-tab1, tab2, tab3 = st.tabs(["🔫 Sniper Board", "🧊 Vault", "📈 Chart"])
+tab1, tab2, tab3 = st.tabs(["🔫 Sniper Board", "🧊 Vault", "📈 Technical Chart"])
 
 with tab1:
     st.subheader(f"🎯 เป้ากำไร: +{gap_profit} บาท/ไม้")
@@ -296,18 +278,37 @@ with tab2:
 
 with tab3:
     if df_gold is not None:
-        st.subheader("📈 กราฟทองคำ (3 Months)")
-        fig = go.Figure()
-        fig.add_trace(go.Candlestick(x=df_gold.index, open=df_gold['Open'], high=df_gold['High'], low=df_gold['Low'], close=df_gold['Close'], name='Price'))
-        fig.add_trace(go.Scatter(x=df_gold.index, y=df_gold['EMA50'], name='EMA 50', line=dict(color='orange', width=1)))
-        fig.add_trace(go.Scatter(x=df_gold.index, y=df_gold['EMA200'], name='EMA 200', line=dict(color='blue', width=2)))
+        st.subheader("📈 กราฟทองคำ & RSI (1 Hour)")
+        
+        # สร้างกราฟ 2 ชั้น (ราคา + RSI)
+        fig = make_subplots(rows=2, cols=1, shared_xaxes=True, 
+                            vertical_spacing=0.05, row_heights=[0.7, 0.3],
+                            subplot_titles=("Price Action", "RSI Indicator"))
+
+        # 1. กราฟราคา
+        fig.add_trace(go.Candlestick(x=df_gold.index, open=df_gold['Open'], high=df_gold['High'],
+                        low=df_gold['Low'], close=df_gold['Close'], name='Price'), row=1, col=1)
+        fig.add_trace(go.Scatter(x=df_gold.index, y=df_gold['EMA50'], name='EMA 50', line=dict(color='orange', width=1)), row=1, col=1)
+        fig.add_trace(go.Scatter(x=df_gold.index, y=df_gold['EMA200'], name='EMA 200', line=dict(color='blue', width=2)), row=1, col=1)
         
         if price_source == "🤖 Auto (Spot)":
-            fig.add_hline(y=support_usd, line_dash="dot", line_color="green", annotation_text="Support")
-            fig.add_hline(y=resistance_usd, line_dash="dot", line_color="red", annotation_text="Resistance")
+            fig.add_hline(y=support_usd, line_dash="dot", line_color="green", annotation_text="Support", row=1, col=1)
+            fig.add_hline(y=resistance_usd, line_dash="dot", line_color="red", annotation_text="Resistance", row=1, col=1)
 
-        fig.update_layout(height=500, xaxis_rangeslider_visible=False, title="XAU/USD (1H)")
+        # 2. กราฟ RSI
+        fig.add_trace(go.Scatter(x=df_gold.index, y=df_gold['RSI'], name='RSI', line=dict(color='purple', width=2)), row=2, col=1)
+        
+        # เส้น RSI Zone
+        fig.add_hline(y=70, line_dash="dot", line_color="red", row=2, col=1)
+        fig.add_hline(y=30, line_dash="dot", line_color="green", row=2, col=1)
+        
+        # Highlight โซนปลอดภัย (30-70)
+        fig.add_hrect(y0=30, y1=70, line_width=0, fillcolor="gray", opacity=0.1, row=2, col=1)
+
+        fig.update_layout(height=600, xaxis_rangeslider_visible=False, showlegend=True)
         st.plotly_chart(fig, use_container_width=True)
+        
+        st.info("💡 **วิธีดู:** ถ้าเส้น RSI (สีม่วงด้านล่าง) จิ้มลงต่ำกว่าเส้นประสีเขียว (30) แปลว่า **'ของถูก'** เตรียมกระสุนได้เลย!")
     else: st.error("โหลดกราฟไม่ได้")
 
 st.markdown("<div class='footer'>🛠️ Engineered by <b>โบ้ 50</b></div>", unsafe_allow_html=True)
