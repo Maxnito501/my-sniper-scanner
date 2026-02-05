@@ -16,7 +16,7 @@ st.set_page_config(page_title="Gold Sniper System", page_icon="🛰️", layout=
 # Custom CSS
 st.markdown("""
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;600&display=swap');
+    @import url('[https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;600&display=swap](https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;600&display=swap)');
     html, body, [class*="css"]  { font-family: 'Kanit', sans-serif; }
     
     .gold-box { background-color: #fffbeb; padding: 20px; border-radius: 10px; border: 1px solid #fcd34d; text-align: center; }
@@ -30,7 +30,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.title("🛰️ POLARIS: Gold Sniper (RSI Chart V6.3 Fixed)")
+st.title("🛰️ POLARIS: Gold Sniper (RSI Chart V6.4 Fixed)")
 st.markdown("**ระบบเทรดทองคำส่วนตัว: เพิ่มกราฟ RSI เพื่อจับจังหวะด้วยตา**")
 st.write("---")
 
@@ -50,7 +50,8 @@ def load_data():
                 return data
         except: 
             if os.path.exists(BAK_FILE):
-                try: with open(BAK_FILE, 'r', encoding='utf-8') as f: return json.load(f)
+                try: 
+                    with open(BAK_FILE, 'r', encoding='utf-8') as f: return json.load(f)
                 except: pass
     return {
         'portfolio': {str(i): {'status': 'EMPTY', 'entry_price': 0.0, 'grams': 0.0, 'date': None} for i in range(1, 6)},
@@ -72,20 +73,20 @@ def notify_action(action_type, wood_num, price, detail=""):
     msg = f"🛰️ **Gold Action**\n------------------\n⚡ **{action_type}** (ไม้ {wood_num})\n💰 ราคา: {price:,.0f} บาท\n📝 {detail}\n⏰ {datetime.now().strftime('%H:%M:%S')}"
     if 'LINE_ACCESS_TOKEN' in st.secrets:
         try:
-            url = 'https://api.line.me/v2/bot/message/push'
+            url = '[https://api.line.me/v2/bot/message/push](https://api.line.me/v2/bot/message/push)'
             headers = {'Content-Type': 'application/json', 'Authorization': f"Bearer {st.secrets['LINE_ACCESS_TOKEN']}"}
             data = {'to': st.secrets['LINE_USER_ID'], 'messages': [{'type': 'text', 'text': msg.replace('*', '')}]}
             requests.post(url, headers=headers, json=data)
         except: pass
     if 'telegram_token' in st.secrets:
         try:
-            tg_url = f"https://api.telegram.org/bot{st.secrets['telegram_token']}/sendMessage"
+            tg_url = f"[https://api.telegram.org/bot](https://api.telegram.org/bot){st.secrets['telegram_token']}/sendMessage"
             requests.post(tg_url, json={"chat_id": st.secrets['telegram_chat_id'], "text": msg, "parse_mode": "Markdown"})
         except: pass
 
 # --- 4. ฟังก์ชันคำนวณและดึงข้อมูล ---
 def calculate_indicators(df):
-    df = df.copy() # ป้องกัน SettingWithCopyWarning
+    df = df.copy()
     delta = df['Close'].diff()
     gain = (delta.where(delta > 0, 0)).ewm(alpha=1/14, adjust=False).mean()
     loss = (-delta.where(delta < 0, 0)).ewm(alpha=1/14, adjust=False).mean()
@@ -100,11 +101,18 @@ def find_support_resistance(df):
     recent_high = df['High'].tail(20).max()
     return recent_low, recent_high
 
-# เปลี่ยนชื่อฟังก์ชันเพื่อ Clear Cache
 @st.cache_data(ttl=60)
 def get_market_data_v2(): 
     try:
-        fx = yf.Ticker("THB=X").history(period="1d")['Close'].iloc[-1]
+        # 1. ดึงค่าเงินบาท
+        fx = 34.50
+        try:
+            fx_data = yf.Ticker("THB=X").history(period="1d")
+            if not fx_data.empty:
+                fx = float(fx_data['Close'].iloc[-1])
+        except: pass
+
+        # 2. ดึงราคาทอง
         df = yf.download("GC=F", period="3mo", interval="1h", progress=False)
         
         # จัดการ MultiIndex
@@ -113,15 +121,18 @@ def get_market_data_v2():
             
         if len(df) > 0: 
             df = calculate_indicators(df)
-            
-        return float(fx), df
+            return float(fx), df
+        else:
+            return float(fx), None
+
     except: return 34.50, None
 
 # --- 5. Sidebar ตั้งค่า ---
 st.sidebar.header("⚙️ ตั้งค่าราคา")
 price_source = st.sidebar.radio("แหล่งที่มา:", ["🤖 Auto (Spot)", "✍️ Manual (ระบุเอง)"])
 
-auto_fx, df_gold = get_market_data_v2() # เรียกฟังก์ชันใหม่
+auto_fx, df_gold = get_market_data_v2()
+
 current_thb_baht = 0.0 
 current_rsi = 0.0
 support_usd, resistance_usd = 0.0, 0.0
@@ -131,19 +142,29 @@ if price_source == "🤖 Auto (Spot)":
     fx_rate = st.sidebar.number_input("USD/THB", value=auto_fx, format="%.2f")
     premium = st.sidebar.number_input("Premium (+)", value=100.0, step=10.0)
     
-    if df_gold is not None and 'RSI' in df_gold.columns: # เช็คก่อนว่ามี RSI ไหม
-        current_usd = float(df_gold['Close'].iloc[-1])
-        current_thb_baht = round(((current_usd * fx_rate * 0.473) + premium) / 50) * 50
-        current_rsi = df_gold['RSI'].iloc[-1]
-        support_usd, resistance_usd = find_support_resistance(df_gold)
-        st.sidebar.success(f"ราคาตลาด: **{current_thb_baht:,.0f}**")
+    if df_gold is not None:
+        try:
+            current_usd = float(df_gold['Close'].iloc[-1])
+            current_thb_baht = round(((current_usd * fx_rate * 0.473) + premium) / 50) * 50
+            
+            # เช็คว่ามีคอลัมน์ RSI ไหม
+            if 'RSI' in df_gold.columns:
+                current_rsi = float(df_gold['RSI'].iloc[-1])
+                support_usd, resistance_usd = find_support_resistance(df_gold)
+            
+            st.sidebar.success(f"ราคาตลาด: **{current_thb_baht:,.0f}**")
+        except:
+            st.sidebar.error("Error คำนวณราคา")
 else:
     st.sidebar.caption("กรอกราคาซื้อขายจริง")
     manual_price = st.sidebar.number_input("ราคาทอง (บาทละ)", value=40500, step=50)
     current_thb_baht = manual_price
+    # พยายามดึง RSI มาโชว์แม้จะเป็น Manual Mode
     if df_gold is not None and 'RSI' in df_gold.columns: 
-        current_rsi = df_gold['RSI'].iloc[-1]
-        support_usd, resistance_usd = find_support_resistance(df_gold)
+        try:
+            current_rsi = float(df_gold['RSI'].iloc[-1])
+            support_usd, resistance_usd = find_support_resistance(df_gold)
+        except: pass
 
 st.sidebar.markdown("---")
 st.sidebar.header("📏 ตั้งค่า Grid")
@@ -161,32 +182,35 @@ base_trade_size = st.sidebar.number_input("เงินต้นเริ่ม�
 st.subheader("🧠 คำแนะนำกลยุทธ์ (AI Strategy)")
 
 if df_gold is not None:
-    last_close = df_gold['Close'].iloc[-1]
-    ema200 = df_gold['EMA200'].iloc[-1]
-    
-    col_sniper, col_investor = st.columns(2)
-    
-    with col_sniper:
-        st.markdown("#### ⚡ สายเก็งกำไร (Sniper)")
-        sniper_msg, sniper_class = "", ""
-        if current_rsi <= 30:
-            sniper_msg, sniper_class = f"💎 **FIRE!**: RSI {current_rsi:.0f} ต่ำมาก (ซื้อสวน)", "buy-sig"
-        elif current_rsi <= 45 and last_close > ema200:
-            sniper_msg, sniper_class = f"🛒 **BUY DIP**: RSI {current_rsi:.0f} ย่อตัวสวย", "buy-sig"
-        elif current_rsi >= 75:
-            sniper_msg, sniper_class = f"💰 **SELL**: RSI {current_rsi:.0f} แพงแล้ว", "sell-sig"
-        else:
-            sniper_msg, sniper_class = f"⏳ **WAIT**: RSI {current_rsi:.0f} กลางๆ (ไม่ชัด)", "wait-sig"
-        st.markdown(f'<div class="sig-box {sniper_class}">{sniper_msg}</div>', unsafe_allow_html=True)
+    try:
+        last_close = float(df_gold['Close'].iloc[-1])
+        ema200 = float(df_gold['EMA200'].iloc[-1])
+        
+        col_sniper, col_investor = st.columns(2)
+        
+        with col_sniper:
+            st.markdown("#### ⚡ สายเก็งกำไร (Sniper)")
+            sniper_msg, sniper_class = "", ""
+            if current_rsi <= 30:
+                sniper_msg, sniper_class = f"💎 **FIRE!**: RSI {current_rsi:.0f} ต่ำมาก (ซื้อสวน)", "buy-sig"
+            elif current_rsi <= 45 and last_close > ema200:
+                sniper_msg, sniper_class = f"🛒 **BUY DIP**: RSI {current_rsi:.0f} ย่อตัวสวย", "buy-sig"
+            elif current_rsi >= 75:
+                sniper_msg, sniper_class = f"💰 **SELL**: RSI {current_rsi:.0f} แพงแล้ว", "sell-sig"
+            else:
+                sniper_msg, sniper_class = f"⏳ **WAIT**: RSI {current_rsi:.0f} กลางๆ (ไม่ชัด)", "wait-sig"
+            st.markdown(f'<div class="sig-box {sniper_class}">{sniper_msg}</div>', unsafe_allow_html=True)
 
-    with col_investor:
-        st.markdown("#### 🐢 สายออมยาว (Investor)")
-        invest_msg, invest_class = "", ""
-        if last_close > ema200:
-            invest_msg, invest_class = "🐂 **HOLD**: ภาพใหญ่ขาขึ้น (Run Trend)", "hold-sig"
-        else:
-            invest_msg, invest_class = "🐻 **CAUTION**: หลุดแนวรับสำคัญ", "sell-sig"
-        st.markdown(f'<div class="sig-box {invest_class}">{invest_msg}</div>', unsafe_allow_html=True)
+        with col_investor:
+            st.markdown("#### 🐢 สายออมยาว (Investor)")
+            invest_msg, invest_class = "", ""
+            if last_close > ema200:
+                invest_msg, invest_class = "🐂 **HOLD**: ภาพใหญ่ขาขึ้น (Run Trend)", "hold-sig"
+            else:
+                invest_msg, invest_class = "🐻 **CAUTION**: หลุดแนวรับสำคัญ", "sell-sig"
+            st.markdown(f'<div class="sig-box {invest_class}">{invest_msg}</div>', unsafe_allow_html=True)
+    except:
+        st.warning("กำลังประมวลผลข้อมูล...")
 
 # --- 7. Logic พอร์ต ---
 portfolio = st.session_state.gold_data['portfolio']
