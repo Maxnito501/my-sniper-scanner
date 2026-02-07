@@ -6,10 +6,10 @@ import numpy as np
 import os
 
 # --- ตั้งค่าหน้าเว็บ ---
-st.set_page_config(page_title="Titan Asset Manager V3.5", page_icon="🛡️", layout="wide")
+st.set_page_config(page_title="Titan Asset Manager V4.0", page_icon="🛡️", layout="wide")
 
-st.title("🛡️ Titan V3.5: Wealth & Pension Simulator")
-st.markdown("**ห้องบัญชีและเครื่องจำลองแผนเกษียณ (Financial & Pension Projection)**")
+st.title("🛡️ Titan V4.0: Real-Life Wealth Simulator")
+st.markdown("**ห้องบัญชีและเครื่องจำลองแผนเกษียณ (รวมเงินเฟ้อ + อายุขัยเงิน)**")
 
 csv_file = 'assets.csv'
 
@@ -17,203 +17,172 @@ csv_file = 'assets.csv'
 if os.path.exists(csv_file):
     df = pd.read_csv(csv_file)
     
-    # ตรวจสอบคอลัมน์ DCA (ถ้าไม่มีให้เติม 0)
+    # Check Columns
     if 'Monthly DCA (THB)' not in df.columns:
         df['Monthly DCA (THB)'] = 0
-        df.to_csv(csv_file, index=False)
-
+    if 'Type' not in df.columns: # เพิ่มแยกประเภท Asset/Debt
+        df['Type'] = 'Asset'
+        
     # --- ส่วนแก้ไขข้อมูล (Asset Editor) ---
-    with st.expander("📝 บันทึก/แก้ไข ทรัพย์สินและเงินออม (คลิกเพื่อเปิด)", expanded=False):
+    with st.expander("📝 บันทึกทรัพย์สิน & หนี้สิน (Wealth Sheet)", expanded=False):
         edited_df = st.data_editor(
             df,
             num_rows="dynamic",
             column_config={
+                "Type": st.column_config.SelectboxColumn("สถานะ", options=["Asset (ทรัพย์สิน)", "Liability (หนี้สิน)"], required=True),
                 "Category": st.column_config.SelectboxColumn(
-                    "ประเภท",
+                    "หมวดหมู่",
                     options=["High Yield (สหกรณ์)", "Investment (กบข.)", "Stocks (หุ้นไทย)", 
-                             "Mutual Fund (RMF)", "Sniper (เก็งกำไร)", "Cash (สภาพคล่อง)", "Gold (ทองคำ)"],
+                             "Mutual Fund (RMF)", "Sniper (เก็งกำไร)", "Cash (สภาพคล่อง)", "Gold (ทองคำ)", "Debt (หนี้)"],
                     required=True
                 ),
-                "Value (THB)": st.column_config.NumberColumn("มูลค่าปัจจุบัน", format="%d ฿"),
-                "Monthly DCA (THB)": st.column_config.NumberColumn("ออมเพิ่ม/เดือน", format="%d ฿", help="ใส่ 0 ถ้าไม่ได้เติมเงิน"),
-                "Expected Return (%)": st.column_config.NumberColumn("ผลตอบแทนคาดหวัง/ปี", format="%.1f%%"),
+                "Value (THB)": st.column_config.NumberColumn("มูลค่าคงเหลือ", format="%d ฿"),
+                "Monthly DCA (THB)": st.column_config.NumberColumn("ออม/ผ่อน ต่อเดือน", format="%d ฿"),
+                "Expected Return (%)": st.column_config.NumberColumn("ดอกเบี้ย/ผลตอบแทน (%)", format="%.1f%%"),
             },
             use_container_width=True
         )
 
-        if st.button("💾 บันทึกข้อมูล (Save)"):
+        if st.button("💾 บันทึกข้อมูล"):
             edited_df.to_csv(csv_file, index=False)
             st.success("บันทึกเรียบร้อย!")
             st.rerun()
 
-    # --- 2. ส่วนจำลองอนาคต (Simulation Engine) ---
+    # --- 2. คำนวณ Net Worth ปัจจุบัน ---
+    assets_df = edited_df[edited_df['Type'] == 'Asset']
+    liabilities_df = edited_df[edited_df['Type'] == 'Liability']
+    
+    total_assets = assets_df['Value (THB)'].sum()
+    total_debts = liabilities_df['Value (THB)'].sum()
+    net_worth = total_assets - total_debts
+
+    col_nw1, col_nw2, col_nw3 = st.columns(3)
+    col_nw1.metric("💰 ทรัพย์สินรวม (Assets)", f"{total_assets:,.0f} ฿")
+    col_nw2.metric("💳 หนี้สินรวม (Liabilities)", f"{total_debts:,.0f} ฿", delta=f"-{total_debts/total_assets*100:.1f}% ของสินทรัพย์", delta_color="inverse")
+    col_nw3.metric("💎 ความมั่งคั่งสุทธิ (Net Worth)", f"{net_worth:,.0f} ฿", help="นี่คือเงินจริงๆ ของคุณถ้าขายทุกอย่างใช้หนี้")
+
     st.write("---")
-    st.subheader("🚀 จำลองแผนเกษียณ (บำนาญ + เงินก้อน)")
+    st.subheader("🚀 เครื่องจำลองอนาคต (Simulation)")
 
-    # Input หลัก
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        st.markdown("##### ⏱️ เวลา & เป้าหมาย")
-        years_to_sim = st.number_input("อีกกี่ปีเกษียณ (ทศนิยมได้)", min_value=0.1, max_value=40.0, value=9.75, step=0.25)
-        target_wealth = st.number_input("เป้าหมายเงินก้อน (บาท)", min_value=1000000, value=5000000, step=500000)
-    
-    with col2:
-        st.markdown("##### 👮‍♂️ ข้อมูลข้าราชการ")
-        pension_mode = st.radio("วิธีคำนวณบำนาญ:", ["ให้ระบบคำนวณ (ประมาณการ)", "ระบุเอง (Manual)"])
-        
-        if pension_mode == "ระบุเอง (Manual)":
-            final_pension = st.number_input("ระบุยอดบำนาญที่คาดว่าจะได้ (บาท)", value=49000)
-            avg_last_60_salary = 0 
+    # Input
+    c1, c2, c3, c4 = st.columns(4)
+    with c1:
+        current_age = st.number_input("อายุปัจจุบัน", value=50)
+        retire_age = st.number_input("เกษียณอายุ", value=60)
+    with c2:
+        life_expectancy = st.number_input("คาดว่าจะอยู่ถึงอายุ", value=85)
+        inflation_rate = st.number_input("เงินเฟ้อเฉลี่ย (%)", value=3.0)
+    with c3:
+        # Pension Mode
+        pension_mode = st.radio("บำนาญราชการ:", ["คำนวณ Auto", "ระบุเอง"])
+        if pension_mode == "ระบุเอง":
+            final_pension = st.number_input("ระบุยอดบำนาญ", value=49000)
         else:
-            current_salary = st.number_input("เงินเดือนปัจจุบัน", value=48780)
-            salary_cap = st.number_input("เงินเดือนตันที่", value=73000)
-            total_gov_years_at_retire = st.number_input("อายุราชการรวมตอนเกษียณ (ปี)", value=35.10, step=0.1, format="%.2f")
-
-    with col3:
-        st.markdown("##### 📈 สมมติฐาน")
-        if pension_mode != "ระบุเอง (Manual)":
-            salary_growth = st.slider("เงินเดือนขึ้นเฉลี่ย (%/ปี)", 0.0, 10.0, 3.0, 0.1)
-        safe_withdraw_rate = st.slider("ถอนเงินก้อน(อื่น)มาใช้ (%/ปี)", 1.0, 6.0, 4.0, 0.5)
-        st.caption("*ไม่รวมสหกรณ์ เพราะสหกรณ์คิดรายได้จากปันผลแยกต่างหาก")
+            cur_sal = st.number_input("เงินเดือนปัจจุบัน", value=48780)
+            sal_cap = 73000
+            gov_years = st.number_input("เวลาราชการรวม", value=35.1)
+            # Simple Pension Logic
+            final_pension = min((sal_cap * gov_years)/50, sal_cap*0.7)
+    with c4:
+        monthly_expense_retire = st.number_input("กะใช้เงินหลังเกษียณ (บาท/เดือน)", value=30000, help="คิดเป็นมูลค่าเงินปัจจุบัน")
 
     # --- Logic การคำนวณ ---
-    if not edited_df.empty:
-        
-        # [A] คำนวณบำนาญ
-        if pension_mode == "ให้ระบบคำนวณ (ประมาณการ)":
-            sim_salary = current_salary
-            salary_history = []
-            sim_years = int(years_to_sim) + 1 
-            for y in range(1, sim_years + 1):
-                sim_salary = sim_salary * (1 + salary_growth / 100)
-                if sim_salary > salary_cap: sim_salary = salary_cap
-                if y > (sim_years - 5):
-                    salary_history.extend([sim_salary] * 12)
-
-            while len(salary_history) < 60:
-                salary_history.insert(0, current_salary)
-                
-            last_60_months = salary_history[-60:]
-            avg_last_60_salary = sum(last_60_months) / 60
-            
-            raw_pension = (avg_last_60_salary * total_gov_years_at_retire) / 50
-            max_pension = avg_last_60_salary * 0.70
-            final_pension = min(raw_pension, max_pension)
-
-        # [B] คำนวณเงินก้อน (Wealth Simulation)
-        current_assets_val = edited_df['Value (THB)'].sum()
-        wealth_over_time = {0: current_assets_val}
-        
-        sim_df = edited_df.copy()
-        sim_df['Monthly Rate'] = sim_df['Expected Return (%)'] / 100 / 12
-        
-        months_total = int(years_to_sim * 12)
-        months = np.arange(1, months_total + 1)
-        
-        asset_growth_history = []
-        is_coop = sim_df['Category'] == "High Yield (สหกรณ์)"
-
-        for m in months:
-            # 1. สินทรัพย์ทั่วไป (ทบต้น)
-            sim_df.loc[~is_coop, 'Value (THB)'] = (sim_df.loc[~is_coop, 'Value (THB)'] * (1 + sim_df.loc[~is_coop, 'Monthly Rate'])) + sim_df.loc[~is_coop, 'Monthly DCA (THB)']
-            # 2. สหกรณ์ (ไม่ทบต้น - คิดแค่เงินต้นเพิ่ม)
-            sim_df.loc[is_coop, 'Value (THB)'] = sim_df.loc[is_coop, 'Value (THB)'] + sim_df.loc[is_coop, 'Monthly DCA (THB)']
-
-            wealth_over_time[m] = sim_df['Value (THB)'].sum()
-            
-            # เก็บข้อมูลทำกราฟ Area (รายปี)
-            if m % 12 == 0 or m == months_total:
-                 for index, row in sim_df.iterrows():
-                    asset_growth_history.append({
-                        "Month": m,
-                        "Year": m / 12,
-                        "Category": row['Category'],
-                        "Asset Name": row['Asset Name'],
-                        "Value": row['Value (THB)']
-                    })
-
-        final_wealth = wealth_over_time[months_total] if months_total > 0 else current_assets_val
-        
-        # [C] คำนวณรายได้หลังเกษียณ (Income Breakdown)
-        # รายได้สหกรณ์ (ปันผลจากยอดสุดท้าย)
-        final_coop_df = sim_df[is_coop]
-        coop_income_monthly = (final_coop_df['Value (THB)'] * (final_coop_df['Expected Return (%)'] / 100)).sum() / 12
-        
-        # รายได้อื่นๆ (ถอนใช้ตาม % ที่ตั้งไว้)
-        final_other_df = sim_df[~is_coop]
-        other_income_monthly = (final_other_df['Value (THB)'].sum() * (safe_withdraw_rate/100)) / 12
-        
-        total_monthly_income = final_pension + coop_income_monthly + other_income_monthly
-
-        # --- D. แสดงผลลัพธ์ (Dashboard) ---
-        st.info(f"📊 **สรุปสถานะ ณ วันเกษียณ (อีก {years_to_sim} ปี)**")
-        
-        k1, k2, k3, k4 = st.columns(4)
-        k1.metric("💰 เงินก้อนสะสม (Wealth)", f"{final_wealth/1000000:,.2f} ล้าน฿", 
-                  f"กำไร: {(final_wealth - current_assets_val)/1000:,.0f}k")
-        
-        k2.metric("🏛️ บำนาญราชการ", f"{final_pension:,.0f} ฿", "รายได้หลัก")
-        
-        k3.metric("💸 ดอกผลลงทุน (รวม)", f"{(coop_income_monthly + other_income_monthly):,.0f} ฿", 
-                  f"สหกรณ์+ถอนใช้")
-        
-        k4.metric("✅ รวมมีใช้ต่อเดือน", f"{total_monthly_income:,.0f} ฿", "สบายมาก!")
-
-        # --- E. ส่วนกราฟ (ครบชุด) ---
-        st.write("---")
-        
-        col_pie, col_bar = st.columns(2)
-        
-        # 1. Pie Chart (สัดส่วนเงินก้อน)
-        with col_pie:
-            st.subheader("🥧 สัดส่วนเงินก้อน (วันเกษียณ)")
-            fig_pie = px.pie(sim_df, values='Value (THB)', names='Category', 
-                             title=f'ความมั่งคั่งรวม {final_wealth/1000000:,.2f} ล้านบาท', hole=0.4)
-            fig_pie.update_traces(textposition='inside', textinfo='percent+label')
-            st.plotly_chart(fig_pie, use_container_width=True)
-            
-        # 2. Bar Chart (แหล่งที่มารายได้)
-        with col_bar:
-            st.subheader("💵 ที่มาของรายได้รายเดือน")
-            income_data = [
-                {"Source": "บำนาญ", "Amount": final_pension, "Color": "#3b82f6"},
-                {"Source": "ปันผลสหกรณ์", "Amount": coop_income_monthly, "Color": "#22c55e"},
-                {"Source": "ถอนเงินลงทุน", "Amount": other_income_monthly, "Color": "#f59e0b"}
-            ]
-            income_df = pd.DataFrame(income_data)
-            fig_bar = px.bar(income_df, x="Source", y="Amount", color="Source", 
-                             text_auto=',.0f', title=f"รวม {total_monthly_income:,.0f} บาท/เดือน",
-                             color_discrete_map={"บำนาญ":"#3b82f6", "ปันผลสหกรณ์":"#22c55e", "ถอนเงินลงทุน":"#f59e0b"})
-            fig_bar.update_layout(showlegend=False)
-            st.plotly_chart(fig_bar, use_container_width=True)
-
-        # 3. Line Chart (เส้นทางความมั่งคั่ง)
-        st.subheader("📈 เส้นทางสู่ความมั่งคั่ง (Wealth Projection)")
-        chart_data = pd.DataFrame({
-            "Month": list(wealth_over_time.keys()),
-            "Portfolio Value": list(wealth_over_time.values())
-        })
-        chart_data['Target'] = target_wealth
-        
-        fig = go.Figure()
-        fig.add_trace(go.Scatter(x=chart_data['Month'], y=chart_data['Portfolio Value'], 
-                                 mode='lines', name='เงินก้อนสะสม', line=dict(color='#00CC96', width=3)))
-        fig.add_trace(go.Scatter(x=chart_data['Month'], y=chart_data['Target'], 
-                                 mode='lines', name='เป้าหมายเงินก้อน', line=dict(color='red', dash='dot')))
-        fig.update_layout(height=400, xaxis_title="เดือน", yaxis_title="บาท")
-        st.plotly_chart(fig, use_container_width=True)
-        
-        # 4. Area Chart (การเติบโตแยกตามสินทรัพย์)
-        if asset_growth_history:
-            st.subheader("🧩 การเติบโตแยกตามสินทรัพย์")
-            area_df = pd.DataFrame(asset_growth_history)
-            fig_area = px.area(area_df, x="Year", y="Value", color="Category", 
-                               groupnorm=None)
-            st.plotly_chart(fig_area, use_container_width=True)
-
+    years_to_sim = retire_age - current_age
+    months_to_sim = years_to_sim * 12
+    
+    # A. คำนวณความมั่งคั่งวันเกษียณ (Wealth Accumulation)
+    sim_assets = assets_df.copy()
+    sim_assets['Monthly Rate'] = sim_assets['Expected Return (%)'] / 100 / 12
+    
+    fv_total = 0
+    # แยกคำนวณสหกรณ์ (Simple) กับ กองทุน (Compound)
+    is_coop = sim_assets['Category'] == "High Yield (สหกรณ์)"
+    
+    # 1. สหกรณ์: เงินต้น + (DCA * เดือน)
+    coop_fv = sim_assets.loc[is_coop, 'Value (THB)'].sum() + (sim_assets.loc[is_coop, 'Monthly DCA (THB)'].sum() * months_to_sim)
+    
+    # 2. อื่นๆ: Compound Interest
+    other_start = sim_assets.loc[~is_coop, 'Value (THB)'].sum()
+    other_dca = sim_assets.loc[~is_coop, 'Monthly DCA (THB)'].sum()
+    # สูตร FV ของเงินต้น + FV ของ DCA
+    # เพื่อความง่าย ใช้ Rate เฉลี่ยถ่วงน้ำหนัก
+    avg_rate = 0.05 / 12 # สมมติเฉลี่ย 5%
+    if not sim_assets.loc[~is_coop].empty:
+         # คำนวณแบบละเอียดรายตัวก็ได้ แต่ขอใช้แบบรวมเพื่อความเร็ว
+         # FV = PV*(1+r)^n + PMT*(((1+r)^n - 1)/r)
+         other_fv = other_start * (1 + avg_rate)**months_to_sim + other_dca * (((1 + avg_rate)**months_to_sim - 1) / avg_rate)
     else:
-        st.warning("⚠️ กรุณากรอกข้อมูลสินทรัพย์ด้านบนก่อนครับ")
+        other_fv = 0
+        
+    wealth_at_retire = coop_fv + other_fv
+    
+    # B. ปรับเงินเฟ้อ (Real Value)
+    inflation_factor = (1 + inflation_rate/100) ** years_to_sim
+    real_wealth_at_retire = wealth_at_retire / inflation_factor
+    real_pension = final_pension / inflation_factor
+    
+    # C. จำลองการใช้เงิน (Decumulation Phase)
+    # หลังเกษียณ เงินก้อนยังลงทุนต่อได้ (สมมติได้ 4% ชนะเงินเฟ้อนิดหน่อย)
+    # รายจ่ายต้องปรับตามเงินเฟ้อ
+    
+    fund_balance = wealth_at_retire
+    survival_years = 0
+    
+    sim_data = []
+    
+    for age in range(retire_age, life_expectancy + 1):
+        # รายได้ปีนี้ = บำนาญ x 12
+        annual_pension = final_pension * 12 
+        # รายจ่ายปีนี้ (ปรับเงินเฟ้อตามปีที่ผ่านไป)
+        expense_factor = (1 + inflation_rate/100) ** (age - current_age)
+        annual_expense = monthly_expense_retire * 12 * expense_factor
+        
+        # ขาด/เหลือ?
+        gap = annual_expense - annual_pension
+        
+        # ถ้าบำนาญไม่พอ ต้องควักเนื้อ (เงินก้อน)
+        if gap > 0:
+            fund_balance -= gap
+        else:
+            # ถ้าบำนาญเหลือ ก็ทบต้นเข้าไป
+            fund_balance += abs(gap)
+            
+        # เงินก้อนที่เหลือ ก็ทำกำไรได้ (สมมติหลังเกษียณลงทุนเซฟๆ ได้ 3-4%)
+        fund_balance = fund_balance * 1.03
+        
+        sim_data.append({"Age": age, "Fund Balance": max(0, fund_balance)})
+        
+        if fund_balance > 0:
+            survival_years += 1
+
+    # --- Display Result ---
+    st.info(f"📊 **สถานะวันเกษียณ (อายุ {retire_age})**")
+    
+    k1, k2, k3, k4 = st.columns(4)
+    k1.metric("💰 เงินก้อน (ตัวเลข)", f"{wealth_at_retire/1000000:,.1f} M")
+    k2.metric("🥪 มูลค่าจริง (หักเฟ้อ)", f"{real_wealth_at_retire/1000000:,.1f} M", help=f"เงิน {wealth_at_retire:,.0f} ตอนนั้น ซื้อของได้เท่ากับ {real_wealth_at_retire:,.0f} ในวันนี้")
+    k3.metric("🏛️ บำนาญจริง (หักเฟ้อ)", f"{real_pension:,.0f} ฿", help=f"รับ {final_pension} แต่ความรู้สึกเหมือนรับ {real_pension:,.0f}")
+    
+    if fund_balance > 0:
+        k4.metric("🏁 ผลลัพธ์", "รอดสบาย! 🎉", "เงินเหลือถึงวันตาย")
+        status_color = "green"
+    else:
+        k4.metric("🏁 ผลลัพธ์", f"เงินหมดตอน {retire_age + survival_years} ปี", "⚠️ เสี่ยง", delta_color="inverse")
+        status_color = "red"
+
+    # กราฟถังพลังงานชีวิต
+    st.subheader("📉 Wealth Runway: เงินจะหมดเมื่อไหร่?")
+    chart_df = pd.DataFrame(sim_data)
+    
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=chart_df['Age'], y=chart_df['Fund Balance'], fill='tozeroy', mode='lines', name='เงินคงเหลือ', line=dict(color=status_color)))
+    fig.update_layout(xaxis_title="อายุ (ปี)", yaxis_title="เงินก้อนคงเหลือ (บาท)", height=400)
+    st.plotly_chart(fig, use_container_width=True)
+    
+    if fund_balance > 0:
+        st.success(f"🌟 **Ultimate Success:** ด้วยแผนนี้ คุณจะมีบำนาญเลี้ยงชีพ และเงินก้อน 6 ล้านกว่าบาท (มูลค่าจริง 4 ล้านกว่า) ที่ใช้ยังไงก็ไม่หมด สามารถส่งต่อเป็นมรดกได้ครับ!")
+    else:
+        st.warning(f"⚠️ **Warning:** ด้วยอัตราเงินเฟ้อ {inflation_rate}% เงินก้อนอาจจะร่อยหรอเร็วกว่าที่คิด ลองลดรายจ่าย หรือเพิ่มการลงทุนดูครับ")
 
 else:
     st.error("ไม่พบฐานข้อมูล assets.csv")
