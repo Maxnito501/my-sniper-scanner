@@ -6,15 +6,15 @@ import plotly.graph_objects as go
 import datetime
 
 # --- ตั้งค่าหน้าเว็บ ---
-st.set_page_config(page_title="Smart DCA Planner", page_icon="📅", layout="wide")
+st.set_page_config(page_title="Smart DCA Planner V4.4", page_icon="📅", layout="wide")
 
-st.title("📅 Smart DCA Planner: ปฏิทินสไนเปอร์ & จุดขายทำกำไร")
+st.title("📅 Smart DCA Planner V4.4: Complete Edition")
 st.markdown("**1. หาวันที่ของถูก (DCA) | 2. หาจุดขายทำกำไร (Take Profit) | 3. จับจังหวะสวน (Oracle)**")
 st.write("---")
 
-# --- ข้อมูลสินทรัพย์ (ฉบับครบทีม) ---
+# --- ข้อมูลสินทรัพย์ (อัปเดตครบทีม!) ---
 ASSETS = {
-    # หุ้นไทย (10 ตัวหลัก)
+    # 🇹🇭 หุ้นไทย (13 ตัว)
     "🇹🇭 PTT (ปตท.)": "PTT.BK",
     "🇹🇭 CPALL (เซเว่น)": "CPALL.BK",
     "🇹🇭 GULF (กัลฟ์)": "GULF.BK",
@@ -25,15 +25,21 @@ ASSETS = {
     "🇹🇭 AOT (ท่าอากาศยาน)": "AOT.BK",
     "🇹🇭 BDMS (รพ.กรุงเทพ)": "BDMS.BK",
     "🇹🇭 LH (แลนด์ฯ)": "LH.BK",
+    "🇹🇭 TISCO (ทิสโก้)": "TISCO.BK", # <--- ใหม่
+    "🇹🇭 CPN (เซ็นทรัลพัฒนา)": "CPN.BK", # <--- ใหม่
+    "🇹🇭 CRC (เซ็นทรัลรีเทล)": "CRC.BK", # <--- ใหม่
     
-    # กองทุนโลก & สินทรัพย์ทางเลือก
+    # 🌎 กองทุนโลก & หุ้นนอก (10 ตัว)
     "🌎 SCBSEMI (ใช้ SMH)": "SMH",
     "🌎 SCBRMNDQ (ใช้ QQQ)": "QQQ",
     "🌎 SCBRMS&P500 (ใช้ SPY)": "SPY",
     "🌎 SCBGQUAL (ใช้ QUAL)": "QUAL",
     "🥇 Gold (ทองคำ)": "GLD",
+    "🥈 Silver (เงิน)": "SLV",
     "🍎 Apple (AAPL)": "AAPL",
-    "🚀 Nvidia (NVDA)": "NVDA"
+    "🚀 Nvidia (NVDA)": "NVDA",
+    "💻 Microsoft (MSFT)": "MSFT",    # <--- ใหม่
+    "🥤 Coca-Cola (KO)": "KO"         # <--- ใหม่
 }
 
 # --- Sidebar ---
@@ -96,7 +102,7 @@ def calculate_bollinger_bands(ticker):
 
 # --- Main Logic ---
 
-# 1. ดึงข้อมูลพื้นฐาน
+# 1. ดึงข้อมูล
 dca_stats = analyze_dca_days(ticker, years_back)
 cur_price, cur_rsi = get_current_status(ticker)
 today_day = datetime.date.today().day
@@ -195,7 +201,6 @@ with tab1:
         
         col_calc1, col_calc2, col_calc3 = st.columns(3)
         with col_calc1:
-            # ใช้ราคาล่าสุดเป็นค่าตั้งต้น แต่ให้แก้ได้
             buy_price = st.number_input("ต้นทุนที่ซื้อมา (บาท)", value=float(cur_price) if cur_price > 0 else 0.0, format="%.2f")
         with col_calc2:
             target_pct = st.number_input("ต้องการกำไรกี่ %", value=5.0, step=0.5)
