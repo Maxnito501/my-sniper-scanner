@@ -6,7 +6,7 @@ from plotly.subplots import make_subplots
 from datetime import datetime
 
 # --- 1. ตั้งค่าหน้าเว็บ ---
-st.set_page_config(page_title="Polaris Strategy V5.8", page_icon="💎", layout="wide")
+st.set_page_config(page_title="Polaris Strategy V5.7", page_icon="💎", layout="wide")
 
 # Custom CSS
 st.markdown("""
@@ -19,10 +19,11 @@ st.markdown("""
     .sell-zone { background-color: #fee2e2; padding: 15px; border-radius: 10px; border: 2px solid #dc2626; text-align: center; }
     .hold-zone { background-color: #f3f4f6; padding: 15px; border-radius: 10px; border: 2px solid #6b7280; text-align: center; }
     .personal-zone { background-color: #e0f2fe; padding: 15px; border-radius: 10px; border: 2px solid #0284c7; }
+    .action-box { margin-top: 15px; padding: 10px; background-color: #ffffff; border-radius: 8px; border: 1px solid #e5e7eb; box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
 </style>
 """, unsafe_allow_html=True)
 
-st.title("💎 Polaris V5.8: Strategic Advisor")
+st.title("💎 Polaris V5.7: Strategic Advisor (Complete)")
 st.markdown("**ระบบวิเคราะห์จังหวะเข้าทำ: คำนวณราคาที่เหมาะสมสำหรับการ 'ซื้อเพิ่ม' หรือ 'ขายทำกำไร'**")
 st.write("---")
 
@@ -168,6 +169,7 @@ if data_list:
             df_chart, _, div_yield, xd_date = get_data_from_yahoo(target)
             if df_chart is not None:
                 current_price_default = float(df_chart['Close'].iloc[-1])
+                # คำนวณแนวรับแนวต้านจาก High/Low 20 วันล่าสุด
                 recent_low = df_chart['Low'].tail(20).min()
                 recent_high = df_chart['High'].tail(20).max()
                 
@@ -176,7 +178,9 @@ if data_list:
                                 low=df_chart['Low'], close=df_chart['Close'], name='Price'), row=1, col=1)
                 fig.add_trace(go.Scatter(x=df_chart.index, y=df_chart['EMA200'], name='EMA 200', line=dict(color='blue', width=2)), row=1, col=1)
                 
+                # เส้นแนวรับ (สีเขียว)
                 fig.add_hline(y=recent_low, line_dash="dot", line_color="green", annotation_text="Support (รอซื้อ)", row=1, col=1)
+                # เส้นแนวต้าน (สีแดง)
                 fig.add_hline(y=recent_high, line_dash="dot", line_color="red", annotation_text="Resistance (ขายทำกำไร)", row=1, col=1)
                 
                 colors = ['red' if row['Open'] > row['Close'] else 'green' for index, row in df_chart.iterrows()]
@@ -187,82 +191,71 @@ if data_list:
     with col_decision:
         st.subheader("🧠 Personal Advisor")
         
+        # --- ส่วนที่ 1: สำหรับคนมีของ (แก้พอร์ต) ---
         st.markdown('<div class="personal-zone">', unsafe_allow_html=True)
-        st.markdown(f"#### 💼 แผนการเล่น {selected_symbol}")
+        st.markdown(f"#### 💼 พอร์ต {selected_symbol}")
         
-        avg_cost = st.number_input("ต้นทุนเฉลี่ย", value=0.0, step=0.1, format="%.2f", key=f"cost_{selected_symbol}")
-        qty = st.number_input("จำนวนหุ้น", value=0, step=100, key=f"qty_{selected_symbol}")
+        avg_cost = st.number_input("ต้นทุนเฉลี่ย (บาท)", value=0.0, step=0.1, format="%.2f", key=f"cost_{selected_symbol}")
+        qty = st.number_input("จำนวนหุ้นที่มี", value=0, step=100, key=f"qty_{selected_symbol}")
         
-        if target:
-            rsi_val = df_chart['RSI'].iloc[-1]
+        rsi_val = df_chart['RSI'].iloc[-1]
+        
+        if qty > 0 and avg_cost > 0:
+            market_val = current_price_default * qty
+            cost_val = avg_cost * qty
+            unrealized = market_val - cost_val
+            pct = (unrealized / cost_val) * 100
             
-            if qty > 0 and avg_cost > 0:
-                market_val = current_price_default * qty
-                cost_val = avg_cost * qty
-                unrealized = market_val - cost_val
-                pct = (unrealized / cost_val) * 100
-                
-                if unrealized < 0:
-                    st.error(f"📉 ขาดทุน: {unrealized:,.0f} ฿ ({pct:.2f}%)")
-                    
-                    # Logic คำแนะนำเมื่อขาดทุน
-                    if current_price_default <= recent_low * 1.01: # ราคาใกล้แนวรับ (1%)
-                        if rsi_val <= 45:
-                            st.markdown("""
-                            <div class="buy-zone">
-                                <h3>✅ ซื้อถัวได้! (Average Down)</h3>
-                                <p>ราคาลงมาชนแนวรับสำคัญ + RSI ต่ำ</p>
-                                <p>เป็นจังหวะที่ดีในการดึงต้นทุนลง</p>
-                            </div>
-                            """, unsafe_allow_html=True)
-                        else:
-                            st.markdown("""
-                            <div class="wait-zone">
-                                <h3>🤔 รอก่อน (Wait)</h3>
-                                <p>ราคาชนรับแล้ว แต่ RSI ยังไม่ต่ำพอ</p>
-                                <p>รอแท่งเทียนกลับตัวก่อนค่อยเข้า</p>
-                            </div>
-                            """, unsafe_allow_html=True)
-                    else:
-                        st.markdown("""
-                        <div class="hold-zone">
-                            <h3>⏳ ถือรอ (Hold)</h3>
-                            <p>ราคายังลอยอยู่กลางทาง</p>
-                            <p>รอให้ลงมาถึงแนวรับข้างล่างค่อยพิจารณา</p>
-                        </div>
-                        """, unsafe_allow_html=True)
-
+            if unrealized < 0:
+                st.error(f"📉 ขาดทุน: {unrealized:,.0f} ฿ ({pct:.2f}%)")
+                # คำแนะนำแก้ดอย
+                if current_price_default <= recent_low * 1.01:
+                    st.markdown("**💡 แผนแก้เกม:** ราคาน่าถัวมาก (ชนแนวรับ) ซื้อเพิ่มเพื่อลดทุนได้")
                 else:
-                    st.success(f"🎉 กำไร: +{unrealized:,.0f} ฿ (+{pct:.2f}%)")
-                    # Logic คำแนะนำเมื่อกำไร
-                    if current_price_default >= recent_high * 0.99:
-                        st.markdown("""
-                        <div class="sell-zone">
-                            <h3>💰 พิจารณาขาย (Take Profit)</h3>
-                            <p>ราคาชนแนวต้านเดิมแล้ว ระวังย่อตัว</p>
-                        </div>
-                        """, unsafe_allow_html=True)
-                    else:
-                        st.markdown("""
-                        <div class="hold-zone">
-                            <h3>💎 รันเทรนด์ (Run Trend)</h3>
-                            <p>แนวโน้มยังไปต่อได้ ถือลุ้น High เดิม</p>
-                        </div>
-                        """, unsafe_allow_html=True)
-            
-                # เครื่องคิดเลขต้นทุนใหม่
-                st.write("---")
-                with st.expander("🧮 คำนวณต้นทุนใหม่ (ถ้าซื้อเพิ่ม)", expanded=False):
-                    add_shares = st.number_input("จะซื้อเพิ่มกี่หุ้น?", value=100, step=100, key=f"add_{selected_symbol}")
-                    if add_shares > 0 and avg_cost > 0:
-                        new_cost = ((avg_cost * qty) + (current_price_default * add_shares)) / (qty + add_shares)
-                        diff_cost = avg_cost - new_cost
-                        st.info(f"👉 ต้นทุนใหม่จะลดลงเหลือ: **{new_cost:.2f} บาท** (ลดลง {diff_cost:.2f} บาท)")
-            
+                    st.markdown(f"**💡 แผนแก้เกม:** รอก่อน (Wait) ให้ลงมาแถว **{recent_low:.2f}** ค่อยถัว")
             else:
-                st.info("กรอกต้นทุนเพื่อรับคำแนะนำ")
-
+                st.success(f"🎉 กำไร: +{unrealized:,.0f} ฿ (+{pct:.2f}%)")
+                st.markdown("**💡 แผนทำกำไร:** ถือต่อ (Run Trend) / ถ้าเป็นหุ้นซิ่งพิจารณาขายที่แนวต้าน")
+        else:
+            st.info("กรอกต้นทุนเพื่อรับคำแนะนำแก้พอร์ต")
         st.markdown('</div>', unsafe_allow_html=True)
+
+        # --- ส่วนที่ 2: สำหรับคนหาของ (เงินก้อนใหม่) ---
+        st.write("")
+        st.markdown('<div class="action-box">', unsafe_allow_html=True)
+        st.markdown(f"#### 🛒 แผนสำหรับเงินก้อนใหม่ (New Entry)")
+        
+        buy_status = ""
+        buy_color = ""
+        
+        # Logic วิเคราะห์จุดเข้า
+        if current_price_default <= recent_low * 1.015: # ราคาอยู่ใกล้แนวรับ (1.5%)
+            if rsi_val <= 45:
+                buy_status = "✅ **BUY NOW:** ราคาสวย! (ชนแนวรับ + RSI ต่ำ)"
+                buy_color = "green"
+            else:
+                buy_status = "🤔 **WAIT:** ราคาดีแต่ RSI ยังสูง (รอแท่งกลับตัว)"
+                buy_color = "orange"
+        elif current_price_default >= recent_high * 0.985: # ราคาอยู่ใกล้แนวต้าน
+             buy_status = "⛔ **DON'T BUY:** ราคาชนเพดาน (เสี่ยงดอย)"
+             buy_color = "red"
+        else:
+             buy_status = f"⏳ **WAIT:** ราคากลางๆ รอที่ **{recent_low:.2f}**"
+             buy_color = "gray"
+             
+        st.markdown(f":{buy_color}[{buy_status}]")
+        st.caption(f"ราคาปัจจุบัน: {current_price_default:.2f} | แนวรับ: {recent_low:.2f} | แนวต้าน: {recent_high:.2f}")
+        
+        st.markdown('</div>', unsafe_allow_html=True)
+        
+        # เครื่องคิดเลขต้นทุนใหม่
+        st.write("")
+        with st.expander("🧮 คำนวณต้นทุนใหม่ (Simulator)", expanded=False):
+            add_shares = st.number_input("จะซื้อเพิ่มกี่หุ้น?", value=100, step=100, key=f"add_{selected_symbol}")
+            if add_shares > 0 and avg_cost > 0:
+                new_cost = ((avg_cost * qty) + (current_price_default * add_shares)) / (qty + add_shares)
+                diff_cost = avg_cost - new_cost
+                st.info(f"👉 ต้นทุนใหม่: **{new_cost:.2f} บาท** (ลดลง {diff_cost:.2f} บาท)")
 
 else:
     st.error("โหลดข้อมูลไม่ได้ กรุณา Refresh")
