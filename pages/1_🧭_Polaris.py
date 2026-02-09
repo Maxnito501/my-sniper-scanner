@@ -6,7 +6,7 @@ from plotly.subplots import make_subplots
 from datetime import datetime
 
 # --- 1. ตั้งค่าหน้าเว็บ ---
-st.set_page_config(page_title="Polaris Strategy V5.6", page_icon="💎", layout="wide")
+st.set_page_config(page_title="Polaris Strategy V5.7", page_icon="💎", layout="wide")
 
 # Custom CSS
 st.markdown("""
@@ -15,14 +15,16 @@ st.markdown("""
     html, body, [class*="css"]  { font-family: 'Kanit', sans-serif; }
     
     .buy-zone { background-color: #dcfce7; padding: 15px; border-radius: 10px; border: 2px solid #16a34a; text-align: center; }
+    .wait-zone { background-color: #fff7ed; padding: 15px; border-radius: 10px; border: 2px solid #f97316; text-align: center; }
+    .sell-zone { background-color: #fee2e2; padding: 15px; border-radius: 10px; border: 2px solid #dc2626; text-align: center; }
     .hold-zone { background-color: #f3f4f6; padding: 15px; border-radius: 10px; border: 2px solid #6b7280; text-align: center; }
     .dividend-box { background-color: #fffbeb; padding: 10px; border-radius: 5px; border: 1px dashed #f59e0b; margin-top: 10px; }
     .personal-zone { background-color: #e0f2fe; padding: 15px; border-radius: 10px; border: 2px solid #0284c7; }
 </style>
 """, unsafe_allow_html=True)
 
-st.title("💎 Polaris V5.6: Dividend & Accumulation")
-st.markdown("**ระบบเทรดสาย VI/ปันผล: ไม่คัทลอส เน้นสะสมของดีราคาถูก และกินปันผล**")
+st.title("💎 Polaris V5.7: Strategic Advisor (Buy/Wait/Sell)")
+st.markdown("**ระบบวิเคราะห์จังหวะเข้าทำ: คำนวณราคาที่เหมาะสมสำหรับการ 'ซื้อเพิ่ม' หรือ 'ขายทำกำไร'**")
 st.write("---")
 
 # --- 2. ข้อมูลหุ้นและกองทุน ---
@@ -68,12 +70,10 @@ def get_data_from_yahoo(ticker):
         info = stock.info
         pe = info.get('trailingPE', 0)
         
-        # ดึงปันผล
         raw_div = info.get('dividendYield', 0)
         div_yield = (raw_div * 100) if raw_div and raw_div < 1 else (raw_div if raw_div else 0)
         if div_yield > 20: div_yield = 0 # Filter Error
         
-        # ดึงวัน XD (Ex-Dividend Date)
         xd_timestamp = info.get('exDividendDate')
         if xd_timestamp:
             xd_date = datetime.fromtimestamp(xd_timestamp).strftime('%d/%m/%Y')
@@ -100,13 +100,12 @@ def analyze_data(df, pe, div):
     color = "white"
     text_color = "black"
     
-    # Logic แบบไม่คัทลอส (เน้นซื้อเพิ่ม)
     if rsi <= 35:
-        action = "🟢 BUY MORE (ถัว)"
+        action = "🟢 BUY MORE"
         color = "#90EE90"
     elif rsi >= 75:
-        action = "🟠 PROFIT RUN/TRIM"
-        color = "#FFD700" # สีทอง
+        action = "🟠 TRIM PORT"
+        color = "#FFD700" 
     elif 35 < rsi < 50 and price > ema200:
         action = "🛒 ACCUMULATE"
         color = "#98FB98"
@@ -135,7 +134,7 @@ for i, (name, ticker) in enumerate(all_tickers):
             "Action": act,
             "P/E": f"{pe:.1f}" if pe > 0 else "-",
             "Div %": f"{div:.2f}%" if div > 0 else "-",
-            "XD Date": xd, # ช่องใหม่
+            "XD Date": xd,
             "Trend": trend,
             "Color": col,
             "TextColor": txt_col
@@ -155,10 +154,10 @@ if data_list:
     st.dataframe(res_df.style.apply(highlight_rows, axis=1).format({"Price": "{:,.2f}", "RSI": "{:.1f}"}),
                  column_order=cols, height=500, use_container_width=True)
 
-    # --- 6. Deep Dive & Personal Plan ---
+    # --- 6. Deep Dive & Personal Advisor ---
     st.write("---")
     
-    col_chart, col_decision = st.columns([1.5, 1])
+    col_chart, col_decision = st.columns([1.6, 1])
     
     with col_chart:
         st.subheader("🔍 Technical Chart")
@@ -170,15 +169,19 @@ if data_list:
             df_chart, _, div_yield, xd_date = get_data_from_yahoo(target)
             if df_chart is not None:
                 current_price_default = float(df_chart['Close'].iloc[-1])
-                recent_low = df_chart['Low'].tail(60).min() # Low ในรอบ 3 เดือน
+                # คำนวณแนวรับแนวต้านจาก High/Low 20 วันล่าสุด
+                recent_low = df_chart['Low'].tail(20).min()
+                recent_high = df_chart['High'].tail(20).max()
                 
                 fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_width=[0.2, 0.7])
                 fig.add_trace(go.Candlestick(x=df_chart.index, open=df_chart['Open'], high=df_chart['High'],
                                 low=df_chart['Low'], close=df_chart['Close'], name='Price'), row=1, col=1)
                 fig.add_trace(go.Scatter(x=df_chart.index, y=df_chart['EMA200'], name='EMA 200', line=dict(color='blue', width=2)), row=1, col=1)
                 
-                # เส้นแนวรับสำหรับถัว
-                fig.add_hline(y=recent_low, line_dash="dot", line_color="green", annotation_text="Support (จุดถัว)", row=1, col=1)
+                # เส้นแนวรับ (สีเขียว)
+                fig.add_hline(y=recent_low, line_dash="dot", line_color="green", annotation_text="Support (รอซื้อ)", row=1, col=1)
+                # เส้นแนวต้าน (สีแดง)
+                fig.add_hline(y=recent_high, line_dash="dot", line_color="red", annotation_text="Resistance (ขายทำกำไร)", row=1, col=1)
                 
                 colors = ['red' if row['Open'] > row['Close'] else 'green' for index, row in df_chart.iterrows()]
                 fig.add_trace(go.Bar(x=df_chart.index, y=df_chart['Volume'], marker_color=colors, name='Volume'), row=2, col=1)
@@ -189,7 +192,7 @@ if data_list:
         st.subheader("🧠 Personal Advisor (ที่ปรึกษาแก้พอร์ต)")
         
         st.markdown('<div class="personal-zone">', unsafe_allow_html=True)
-        st.markdown(f"#### 💼 พอร์ต {selected_symbol} ของคุณ")
+        st.markdown(f"#### 💼 แผนการเล่น {selected_symbol}")
         
         # 1. กรอกข้อมูลจริง
         avg_cost = st.number_input("ต้นทุนเฉลี่ย (บาท)", value=0.0, step=0.1, format="%.2f", key=f"cost_{selected_symbol}")
@@ -197,14 +200,11 @@ if data_list:
         
         rsi_val = df_chart['RSI'].iloc[-1]
         
-        # โชว์ข้อมูลปันผล
-        if div_yield > 0:
-            st.markdown(f"""
-            <div class="dividend-box">
-                💰 <b>Dividend Alert:</b><br>
-                ปันผล: {div_yield:.2f}% | XD ล่าสุด: {xd_date}
-            </div>
-            """, unsafe_allow_html=True)
+        # แสดงสถานะปัจจุบัน
+        st.write("---")
+        st.markdown(f"**ราคาตลาด:** {current_price_default:,.2f} บาท")
+        st.markdown(f"**แนวรับ (Support):** {recent_low:,.2f} บาท")
+        st.markdown(f"**แนวต้าน (Resistance):** {recent_high:,.2f} บาท")
 
         if qty > 0 and avg_cost > 0:
             market_val = current_price_default * qty
@@ -212,35 +212,64 @@ if data_list:
             unrealized = market_val - cost_val
             pct = (unrealized / cost_val) * 100
             
-            # --- Logic คำแนะนำแบบ VI (ไม่คัท) ---
             if unrealized < 0:
-                st.error(f"📉 ติดดอย: {unrealized:,.0f} ฿ ({pct:.2f}%)")
-                
-                if rsi_val <= 45:
-                    st.markdown('<div class="buy-zone">🛒 <b>OPPORTUNITY:</b><br>ราคาย่อตัวลงมาสวย (RSI ต่ำ) เหมาะแก่การซื้อเพิ่มเพื่อดึงทุนลง</div>', unsafe_allow_html=True)
-                    
-                    # เครื่องคิดเลขถัว
-                    st.write("---")
-                    st.write("**🧮 แผนแก้เกม (ถัวเฉลี่ย):**")
-                    budget_add = st.number_input("มีกระสุนเพิ่มเท่าไหร่? (บาท)", value=5000, step=1000)
-                    if budget_add > 0:
-                        add_shares = int(budget_add / current_price_default)
-                        new_cost = ((avg_cost * qty) + (current_price_default * add_shares)) / (qty + add_shares)
-                        diff_cost = avg_cost - new_cost
-                        
-                        st.info(f"""
-                        ซื้อเพิ่ม: **{add_shares} หุ้น**
-                        👉 ต้นทุนใหม่จะลดลงเหลือ: **{new_cost:.2f} บาท** (ลดลง {diff_cost:.2f} บาท)
-                        """)
-                else:
-                    st.markdown('<div class="hold-zone">🧱 <b>HOLD:</b><br>ราคายังไม่ถูกมาก ถือรอปันผลไปก่อน หรือรอให้ลงลึกกว่านี้ค่อยถัว</div>', unsafe_allow_html=True)
-
+                st.error(f"📉 ขาดทุน: {unrealized:,.0f} ฿ ({pct:.2f}%)")
             else:
                 st.success(f"🎉 กำไร: +{unrealized:,.0f} ฿ (+{pct:.2f}%)")
-                st.markdown('<div class="hold-zone">💎 <b>LET PROFIT RUN:</b><br>ถือต่อไปครับ เทรนด์ยังดี เก็บปันผลกินยาวๆ</div>', unsafe_allow_html=True)
 
+        # --- 2. คำแนะนำแบบเจาะจง (ซื้อ/รอ/ขาย) ---
+        st.write("---")
+        st.markdown("#### 🤖 คำแนะนำจาก AI:")
+        
+        # Logic ตัดสินใจ: ราคาปัจจุบัน vs แนวรับ
+        price_diff_support = ((current_price_default - recent_low) / recent_low) * 100
+        
+        advice_html = ""
+        
+        if current_price_default <= recent_low * 1.01: # ราคาอยู่ใกล้แนวรับ 1%
+            if rsi_val <= 45:
+                advice_html = f"""
+                <div class="buy-zone">
+                    <h3>✅ ซื้อเพิ่มได้เลย! (Buy Now)</h3>
+                    <p>ราคาลงมาแตะแนวรับ ({recent_low:.2f}) + RSI ต่ำ ({rsi_val:.0f})</p>
+                    <p>นี่คือจุดที่ได้เปรียบที่สุดในการสะสมเพิ่ม</p>
+                </div>
+                """
+            else:
+                 advice_html = f"""
+                <div class="wait-zone">
+                    <h3>🤔 เฝ้าระวัง (Watch)</h3>
+                    <p>ราคาชนแนวรับแล้ว แต่ RSI ยังสูง ({rsi_val:.0f})</p>
+                    <p>รอแท่งเทียนกลับตัว (เขียวแรก) ก่อนค่อยเข้า</p>
+                </div>
+                """
+        elif current_price_default >= recent_high * 0.99: # ราคาอยู่ใกล้แนวต้าน
+             advice_html = f"""
+            <div class="sell-zone">
+                <h3>💰 พิจารณาขาย (Take Profit)</h3>
+                <p>ราคาชนแนวต้าน ({recent_high:.2f})</p>
+                <p>ถ้าเป็นหุ้นซิ่ง ควรขายทำกำไร / ถ้าหุ้นปันผล ให้ถือต่อ</p>
+            </div>
+            """
         else:
-            st.info("กรอกต้นทุนเพื่อรับคำแนะนำ")
+             advice_html = f"""
+            <div class="hold-zone">
+                <h3>⏳ รอก่อน (Wait)</h3>
+                <p>ราคากลางๆ (ลอยตัว)</p>
+                <p><b>จุดรอซื้อ:</b> {recent_low:.2f} บาท</p>
+            </div>
+            """
+            
+        st.markdown(advice_html, unsafe_allow_html=True)
+        
+        # --- 3. เครื่องคิดเลขต้นทุนใหม่ ---
+        if "ซื้อ" in advice_html:
+            with st.expander("🧮 คำนวณต้นทุนใหม่ (ถ้าซื้อเพิ่ม)", expanded=True):
+                add_shares = st.number_input("จะซื้อเพิ่มกี่หุ้น?", value=100, step=100, key=f"add_{selected_symbol}")
+                if add_shares > 0 and avg_cost > 0:
+                    new_cost = ((avg_cost * qty) + (current_price_default * add_shares)) / (qty + add_shares)
+                    diff_cost = avg_cost - new_cost
+                    st.info(f"👉 ต้นทุนใหม่จะลดลงเหลือ: **{new_cost:.2f} บาท** (ลดลง {diff_cost:.2f} บาท)")
 
         st.markdown('</div>', unsafe_allow_html=True)
 
