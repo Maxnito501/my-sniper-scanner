@@ -5,7 +5,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
 # --- 1. ตั้งค่าหน้าเว็บ ---
-st.set_page_config(page_title="Polaris Strategy V5.0", page_icon="💎", layout="wide")
+st.set_page_config(page_title="Polaris Strategy V5.5", page_icon="💎", layout="wide")
 
 # Custom CSS
 st.markdown("""
@@ -15,23 +15,20 @@ st.markdown("""
     
     .sniper-zone { background-color: #fee2e2; padding: 15px; border-radius: 10px; border: 2px dashed #ef4444; text-align: center; }
     .investor-zone { background-color: #dcfce7; padding: 15px; border-radius: 10px; border: 2px dashed #22c55e; text-align: center; }
-    .recommend-text { font-size: 1.2rem; font-weight: bold; margin-top: 10px; }
+    .personal-zone { background-color: #e0f2fe; padding: 15px; border-radius: 10px; border: 2px solid #0284c7; }
 </style>
 """, unsafe_allow_html=True)
 
-st.title("💎 Polaris V5.0: The Ultimate Decision Engine")
-st.markdown("**ระบบเทรดครบวงจร: สแกนหาหุ้น -> วิเคราะห์กราฟ -> วางแผนหน้าตัก**")
+st.title("💎 Polaris V5.5: Personal Portfolio Advisor")
+st.markdown("**ระบบเทรดครบวงจร: สแกนหุ้น -> วิเคราะห์กราฟ -> วางแผนแก้พอร์ตส่วนตัว**")
 st.write("---")
 
-# --- 2. ข้อมูลหุ้นและกองทุน (อัปเดตเพิ่มหุ้นใหม่) ---
+# --- 2. ข้อมูลหุ้นและกองทุน ---
 STOCKS = [
     "CPALL.BK", "PTT.BK", "LH.BK", "GULF.BK", 
     "SCB.BK", "ADVANC.BK", "AOT.BK", "KBANK.BK", 
     "BDMS.BK", "PTTEP.BK",
-    "TISCO.BK",  # ปันผลสูง
-    "CPAXT.BK",  # แม็คโคร/โลตัส (ค้าปลีก)
-    "CRC.BK",    # เซ็นทรัลรีเทล
-    "CPN.BK"     # เซ็นทรัลพัฒนา (อสังหา)
+    "TISCO.BK", "CPAXT.BK", "CRC.BK", "CPN.BK"
 ]
 
 FUNDS = {
@@ -51,6 +48,7 @@ def get_data_from_yahoo(ticker):
     try:
         df = yf.download(ticker, period="1y", interval="1d", progress=False)
         if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
+        
         if len(df) < 100: return None, 0, 0
 
         # Indicators
@@ -63,7 +61,6 @@ def get_data_from_yahoo(ticker):
         rs = gain / loss
         df['RSI'] = 100 - (100 / (1 + rs))
         
-        # Volume MA
         df['VolMA'] = df['Volume'].rolling(20).mean()
 
         # Fundamental
@@ -84,27 +81,7 @@ def get_data_from_yahoo(ticker):
 def get_news_sentiment(ticker):
     try:
         news = yf.Ticker(ticker).news
-        sentiment_score = 0
-        positive = ['growth', 'profit', 'jump', 'rise', 'record', 'buy', 'bull', 'gain', 'strong', 'up', 'high', 'dividend']
-        negative = ['loss', 'fall', 'drop', 'cut', 'lawsuit', 'bear', 'low', 'risk', 'miss', 'down', 'weak', 'plunge']
-        
-        cleaned_news = []
-        for n in news:
-            title = n.get('title', '')
-            if not title: continue
-            score = 0
-            for w in positive: 
-                if w in title.lower(): score += 1
-            for w in negative: 
-                if w in title.lower(): score -= 1
-            sentiment_score += score
-            cleaned_news.append({'title': title, 'link': n.get('link'), 'publisher': n.get('publisher'), 'score': score})
-            
-        final_sentiment = "⚪ Neutral"
-        if sentiment_score > 0: final_sentiment = "🟢 Positive"
-        elif sentiment_score < 0: final_sentiment = "🔴 Negative"
-        
-        return cleaned_news[:5], final_sentiment, sentiment_score
+        return [], "⚪ Neutral", 0
     except: return [], "⚪ Neutral", 0
 
 # --- 4. Strategy Engine ---
@@ -152,6 +129,7 @@ for i, (name, ticker) in enumerate(all_tickers):
     
     if df is not None:
         price, rsi, trend, strat, act, col, txt_col, vol_st = analyze_data(df, pe, div)
+        
         data_list.append({
             "Symbol": name.replace(".BK", ""),
             "Ticker": ticker,
@@ -181,10 +159,9 @@ if data_list:
     st.dataframe(res_df.style.apply(highlight_rows, axis=1).format({"Price": "{:,.2f}", "RSI": "{:.1f}"}),
                  column_order=cols, height=500, use_container_width=True)
 
-    # --- 6. Deep Dive & Decision Support (ส่วนใหม่!) ---
+    # --- 6. Deep Dive & Personal Plan (ส่วนใหม่!) ---
     st.write("---")
     
-    # แบ่งหน้าจอ: ซ้าย(กราฟ) - ขวา(คำนวณเงิน)
     col_chart, col_decision = st.columns([1.5, 1])
     
     with col_chart:
@@ -194,7 +171,7 @@ if data_list:
         target = next((t for n, t in all_tickers if n.replace(".BK", "") == selected_symbol), None)
 
         if target:
-            df_chart, _, _ = get_data_from_yahoo(target)
+            df_chart, _, div_yield = get_data_from_yahoo(target)
             if df_chart is not None:
                 current_price_default = float(df_chart['Close'].iloc[-1])
                 
@@ -202,100 +179,86 @@ if data_list:
                 fig.add_trace(go.Candlestick(x=df_chart.index, open=df_chart['Open'], high=df_chart['High'],
                                 low=df_chart['Low'], close=df_chart['Close'], name='Price'), row=1, col=1)
                 fig.add_trace(go.Scatter(x=df_chart.index, y=df_chart['EMA200'], name='EMA 200', line=dict(color='blue', width=2)), row=1, col=1)
+                
+                # เส้นแนวรับ (Low 20 วัน)
+                recent_low = df_chart['Low'].tail(20).min()
+                fig.add_hline(y=recent_low, line_dash="dot", line_color="green", annotation_text="แนวรับ (รอซื้อ)", row=1, col=1)
+                
                 colors = ['red' if row['Open'] > row['Close'] else 'green' for index, row in df_chart.iterrows()]
                 fig.add_trace(go.Bar(x=df_chart.index, y=df_chart['Volume'], marker_color=colors, name='Volume'), row=2, col=1)
                 fig.update_layout(height=600, xaxis_rangeslider_visible=False, margin=dict(l=0, r=0, t=30, b=0))
                 st.plotly_chart(fig, use_container_width=True)
-                
-                # News Section
-                st.markdown("#### 📰 ข่าวล่าสุด & อารมณ์ตลาด")
-                news_list, sentiment_label, sentiment_score = get_news_sentiment(target)
-                st.info(f"Market Sentiment: {sentiment_label} (Score: {sentiment_score})")
-                
-                if news_list:
-                    for n in news_list:
-                        icon = "🟢" if n['score'] > 0 else ("🔴" if n['score'] < 0 else "⚪")
-                        st.markdown(f"{icon} [{n['title']}]({n['link']})")
-                else:
-                    st.caption("ไม่มีข่าวล่าสุดจาก Yahoo Finance")
 
     with col_decision:
-        st.subheader("🧠 Decision Support (วางแผนเทรด)")
+        st.subheader("🧠 Personal Advisor (ที่ปรึกษาส่วนตัว)")
         
-        # 1. กรอกต้นทุน (ถ้ามี)
-        with st.expander("📝 บันทึกต้นทุน (ถ้ามีของ)", expanded=True):
-            avg_cost = st.number_input("ต้นทุนเฉลี่ย (บาท)", value=0.0, step=0.1, format="%.2f")
-            qty = st.number_input("จำนวนหุ้นที่มี", value=0, step=100)
+        # กล่องวิเคราะห์พอร์ตส่วนตัว
+        st.markdown('<div class="personal-zone">', unsafe_allow_html=True)
+        st.markdown(f"#### 💼 สถานะของคุณกับ {selected_symbol}")
+        
+        # ใช้ key เพื่อแยกข้อมูลแต่ละหุ้น
+        avg_cost = st.number_input("ต้นทุนเฉลี่ย (บาท)", value=0.0, step=0.1, format="%.2f", key=f"cost_{selected_symbol}")
+        qty = st.number_input("จำนวนหุ้นที่มี", value=0, step=100, key=f"qty_{selected_symbol}")
+        
+        if qty > 0 and avg_cost > 0:
+            market_val = current_price_default * qty
+            cost_val = avg_cost * qty
+            unrealized = market_val - cost_val
+            pct = (unrealized / cost_val) * 100
             
-            if qty > 0 and avg_cost > 0:
-                market_val = current_price_default * qty
-                cost_val = avg_cost * qty
-                unrealized = market_val - cost_val
-                pct = (unrealized / cost_val) * 100
+            # --- Logic คำแนะนำส่วนตัว ---
+            advice_msg = ""
+            advice_icon = ""
+            
+            # 1. กรณีดอย (ขาดทุน)
+            if unrealized < 0:
+                st.error(f"📉 ขาดทุน: {unrealized:,.0f} ฿ ({pct:.2f}%)")
                 
-                if unrealized >= 0:
-                    st.success(f"กำไร: +{unrealized:,.0f} ฿ (+{pct:.2f}%)")
+                if df_chart['RSI'].iloc[-1] <= 45:
+                    advice_icon = "🛒"
+                    advice_msg = "โอกาสดีในการ 'ถัวเฉลี่ย' (Average Down)! ราคาลงมาในโซนถูกแล้ว"
                     
-                    # คำนวณขายเอาทุนคืน (Free Ride)
-                    shares_sell = cost_val / current_price_default
-                    st.markdown("##### 💡 ทางเลือกแก้เกม:")
-                    st.write(f"- ขาย **{int(shares_sell):,} หุ้น** เพื่อเอาทุนคืนทั้งหมด")
-                    st.write(f"- จะเหลือ **{int(qty - shares_sell):,} หุ้น** เป็นกำไรฟรีๆ (Profit Run)")
+                    # เครื่องคิดเลขถัว
+                    st.markdown("---")
+                    st.markdown("**🧮 แผนแก้เกม (ถัว):**")
+                    add_qty = st.number_input("ถ้าซื้อเพิ่ม (หุ้น)", value=100, step=100, key=f"add_{selected_symbol}")
+                    if add_qty > 0:
+                        new_cost = ((avg_cost * qty) + (current_price_default * add_qty)) / (qty + add_qty)
+                        st.info(f"👉 ต้นทุนใหม่จะลดลงเหลือ: **{new_cost:.2f} บาท**")
+                        st.caption(f"ควรซื้อที่ราคาแนวรับประมาณ: {recent_low:.2f} บาท")
                 else:
-                    st.error(f"ขาดทุน: {unrealized:,.0f} ฿ ({pct:.2f}%)")
-                    st.markdown("##### 💡 จุดถัวเฉลี่ย:")
-                    st.write(f"- ถ้าซื้อเพิ่มเท่าตัว ต้นทุนใหม่จะอยู่ที่: **{(avg_cost + current_price_default)/2:.2f} ฿**")
+                    advice_icon = "⏳"
+                    advice_msg = "ถือรอไปก่อน (Wait) ราคายังลงไม่สุด อย่าเพิ่งรับมีด"
 
-        # 2. วิเคราะห์กลยุทธ์ (Sniper vs Investor)
-        st.write("---")
-        st.markdown("#### ⚖️ คำแนะนำ 2 มุมมอง")
-        
-        rsi_val = df_chart['RSI'].iloc[-1]
-        
-        # Sniper View
-        sniper_msg = ""
-        if rsi_val <= 30: sniper_msg = "🔫 **FIRE!**: ของถูกมาก สวนเทรนด์ได้"
-        elif rsi_val >= 70: sniper_msg = "💰 **TAKE PROFIT**: ขายหมูดีกว่าติดดอย"
-        elif sentiment_score < 0 and current_price_default < avg_cost: sniper_msg = "🚨 **CUT/WAIT**: ข่าวร้าย + ขาดทุน"
-        else: sniper_msg = "⏳ **WAIT**: ยังไม่มีจังหวะคมๆ"
-            
-        st.markdown(f'<div class="sniper-zone"><b>Sniper (สั้น):</b><br>{sniper_msg}</div>', unsafe_allow_html=True)
-        st.write("")
-        
-        # Investor View
-        investor_msg = ""
-        ema200_val = df_chart['EMA200'].iloc[-1]
-        
-        if current_price_default > ema200_val:
-            investor_msg = "💎 **RUN TREND**: หุ้นเป็นขาขึ้น ถือต่อได้สบาย"
-            if rsi_val <= 45: investor_msg += "<br>(จังหวะดีในการซื้อเพิ่ม)"
-        else:
-            investor_msg = "🛡️ **DEFENSIVE**: หลุดแนวรับสำคัญ เน้นถือเงินสด"
-            if avg_cost > 0 and current_price_default < avg_cost * 0.9: investor_msg += "<br>(ถ้าพื้นฐานดี ทยอยสะสมได้)"
-            
-        st.markdown(f'<div class="investor-zone"><b>Investor (ยาว):</b><br>{investor_msg}</div>', unsafe_allow_html=True)
+            # 2. กรณีรวย (กำไร)
+            else:
+                st.success(f"🎉 กำไร: +{unrealized:,.0f} ฿ (+{pct:.2f}%)")
+                
+                # เช็คปันผล
+                is_high_div = div_yield > 4.0 if div_yield else False
+                
+                if is_high_div:
+                    advice_icon = "🛡️"
+                    advice_msg = f"ถือต่อกินปันผล (Hold for Yield) หุ้นนี้ปันผลดี ({div_yield:.1f}%)"
+                elif df_chart['RSI'].iloc[-1] >= 70:
+                    advice_icon = "💰"
+                    advice_msg = "พิจารณา 'ขายทำกำไร' (Take Profit) บางส่วน เพราะราคาเริ่มตึงแล้ว"
+                else:
+                    advice_icon = "💎"
+                    advice_msg = "รันเทรนด์ต่อ (Let Profit Run) แนวโน้มยังไปได้อีก"
 
-        # 3. เครื่องคิดเลขความเสี่ยง (RRR)
-        st.write("---")
-        st.markdown("#### 🧮 คำนวณความเสี่ยง (New Trade)")
-        stop_loss_pct = st.slider("ยอมตัดขาดทุน (%)", 1, 10, 5)
-        take_profit_pct = st.slider("หวังกำไร (%)", 1, 30, 10)
-        
-        stop_price = current_price_default * (1 - stop_loss_pct/100)
-        target_price = current_price_default * (1 + take_profit_pct/100)
-        
-        reward = target_price - current_price_default
-        risk = current_price_default - stop_price
-        rrr = reward / risk if risk > 0 else 0
-        
-        col_r1, col_r2 = st.columns(2)
-        col_r1.metric("จุดคัท (Stop)", f"{stop_price:.2f}")
-        col_r2.metric("จุดขาย (Target)", f"{target_price:.2f}")
-        
-        if rrr >= 2:
-            st.success(f"✅ **RRR = {rrr:.2f}** (คุ้มเสี่ยง!)")
+            st.markdown(f"##### {advice_icon} คำแนะนำ: {advice_msg}")
+            
         else:
-            st.error(f"❌ **RRR = {rrr:.2f}** (ไม่คุ้ม!)")
+            st.info("กรอกต้นทุนเพื่อรับคำแนะนำเฉพาะบุคคล")
+            st.markdown("---")
+            st.markdown(f"**แผนสำหรับคนยังไม่มีของ:**")
+            if df_chart['RSI'].iloc[-1] <= 45:
+                st.success(f"✅ ราคาน่าสะสม (RSI ต่ำ) ทยอยไม้แรกได้ที่ {current_price_default:.2f}")
+            else:
+                st.warning(f"⚠️ ราคายังสูง/กลางๆ รอย่อมาที่แนวรับ {recent_low:.2f} ดีกว่า")
+
+        st.markdown('</div>', unsafe_allow_html=True)
 
 else:
     st.error("โหลดข้อมูลไม่ได้ กรุณา Refresh")
