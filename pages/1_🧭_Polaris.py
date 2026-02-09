@@ -27,7 +27,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.title("💎 Polaris V6.4: Strategic Architect (Strict Mode)")
+st.title("💎 Polaris V6.4: Strategic Architect (Final)")
 st.markdown("**หมอประจำพอร์ต: ปรับเกณฑ์ RSI ให้เข้มข้นขึ้น เพื่อความปลอดภัย**")
 st.write("---")
 
@@ -75,7 +75,7 @@ def get_data_from_yahoo(ticker):
         return df, pe, div_yield, xd_date
     except: return None, 0, 0, "-"
 
-# --- 4. Strategy Engine (ปรับเกณฑ์ RSI ใหม่) ---
+# --- 4. Strategy Engine ---
 def analyze_data(df, pe, div):
     price = df['Close'].iloc[-1]
     ema200 = df['EMA200'].iloc[-1]
@@ -92,15 +92,14 @@ def analyze_data(df, pe, div):
     color = "white"
     text_color = "black"
     
-    # Logic V6.4: เข้มข้นขึ้น (Strict)
-    if rsi <= 30:  # เดิม 35
+    if rsi <= 30:
         action = "🟢 SNIPER BUY"
         color = "#90EE90"
     elif rsi >= 75:
         action = "🟠 TAKE PROFIT"
         color = "#FFD700" 
-    elif 30 < rsi <= 45 and price > ema200: # ปรับเพดานลงจาก 50 เป็น 45
-        action = "🛒 ACCUMULATE" # ซื้อสะสม (Buy on Dip)
+    elif 30 < rsi <= 45 and price > ema200:
+        action = "🛒 ACCUMULATE"
         color = "#98FB98"
         
     return price, rsi, trend, strategy, action, color, text_color
@@ -109,7 +108,6 @@ def analyze_data(df, pe, div):
 st.subheader("📊 Strategic Dashboard")
 
 data_list = []
-# สร้างลิสต์แบบ (ชื่อโชว์, รหัสหุ้น)
 all_tickers = [(s, s) for s in STOCKS] + [(n, t) for n, t in FUNDS.items()]
 
 my_bar = st.progress(0)
@@ -134,14 +132,20 @@ if data_list:
     res_df = pd.DataFrame(data_list)
     cols = ["Symbol", "Price", "RSI", "Strategy", "Action", "P/E", "Div %", "XD Date"]
     
+    # 🛠️ FIX: ฟังก์ชันระบายสีที่ถูกต้อง (ไม่ใช้ subset ใน apply)
     def highlight_rows(row):
         bg_color = row.get("Color", "white")
         txt_color = row.get("TextColor", "black")
         return [f'background-color: {bg_color}; color: {txt_color}'] * len(row)
 
+    # 🛠️ FIX: ลบ subset=cols ออกจาก apply เพื่อให้เห็นคอลัมน์ Color
+    styler = res_df.style.apply(highlight_rows, axis=1).format({"Price": "{:,.2f}", "RSI": "{:.1f}"})
+
     st.dataframe(
-        res_df.style.apply(highlight_rows, axis=1).format({"Price": "{:,.2f}", "RSI": "{:.1f}"}),
-        column_order=cols, height=500, use_container_width=True
+        styler,
+        column_order=cols, # เลือกโชว์เฉพาะคอลัมน์ที่ต้องการตรงนี้
+        height=500, 
+        use_container_width=True
     )
 
     # --- 6. Deep Dive & Personal Advisor ---
@@ -163,6 +167,9 @@ if data_list:
                 current_price_default = float(df_chart['Close'].iloc[-1])
                 recent_low = df_chart['Low'].tail(60).min()
                 recent_high = df_chart['High'].tail(60).max()
+                ema_50 = df_chart['EMA50'].iloc[-1]
+                
+                support_level = max(recent_low, ema_50) if current_price_default > ema_50 else recent_low
                 
                 fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_width=[0.2, 0.7])
                 fig.add_trace(go.Candlestick(x=df_chart.index, open=df_chart['Open'], high=df_chart['High'],
@@ -170,8 +177,8 @@ if data_list:
                 fig.add_trace(go.Scatter(x=df_chart.index, y=df_chart['EMA50'], name='EMA 50', line=dict(color='orange', width=1)), row=1, col=1)
                 fig.add_trace(go.Scatter(x=df_chart.index, y=df_chart['EMA200'], name='EMA 200', line=dict(color='blue', width=2)), row=1, col=1)
                 
-                fig.add_hline(y=recent_low, line_dash="dot", line_color="green", annotation_text="Support (จุดถัว)", row=1, col=1)
-                fig.add_hline(y=recent_high, line_dash="dot", line_color="red", annotation_text="Resistance (ขาย)", row=1, col=1)
+                fig.add_hline(y=recent_low, line_dash="dot", line_color="green", annotation_text="Support", row=1, col=1)
+                fig.add_hline(y=recent_high, line_dash="dot", line_color="red", annotation_text="Resistance", row=1, col=1)
                 
                 colors = ['red' if row['Open'] > row['Close'] else 'green' for index, row in df_chart.iterrows()]
                 fig.add_trace(go.Bar(x=df_chart.index, y=df_chart['Volume'], marker_color=colors, name='Volume'), row=2, col=1)
@@ -187,41 +194,22 @@ if data_list:
         
         st.markdown(f'<span class="strategy-badge {badge_class}">{stock_badge}</span> (P/E: {pe:.1f}, Div: {div_yield:.2f}%)', unsafe_allow_html=True)
         
-        # 1. แผนสำหรับคน "ไม่มีของ" (ปรับเกณฑ์ตรงนี้ด้วย)
-        st.markdown("#### 🛒 กรณี: ยังไม่มีของ (เข้าใหม่)")
-        
         entry_rsi = df_chart['RSI'].iloc[-1]
         
-        if entry_rsi <= 45: # ปรับจาก 50 ลงมา 45
+        # 1. ไม่มีของ
+        st.markdown("#### 🛒 กรณี: ยังไม่มีของ")
+        if entry_rsi <= 45:
              if current_price_default <= recent_low * 1.02:
-                 st.markdown(f"""
-                 <div class="buy-zone">
-                    <b>✅ BUY NOW (ซื้อได้เลย):</b><br>
-                    ราคาชนแนวรับ ({recent_low:.2f}) + RSI ต่ำ ({entry_rsi:.0f})<br>
-                    <span class="price-target">เป้าซื้อ: {current_price_default:.2f}</span>
-                 </div>
-                 """, unsafe_allow_html=True)
+                 st.markdown(f'<div class="buy-zone"><b>✅ BUY NOW:</b> ราคาชนแนวรับ ({recent_low:.2f})</div>', unsafe_allow_html=True)
              else:
-                 st.markdown(f"""
-                 <div class="wait-zone">
-                    <b>⏳ WAIT FOR DIP (รออีกนิด):</b><br>
-                    ราคายังลอยอยู่เหนือแนวรับ<br>
-                    <span class="price-target">รอรับที่: {recent_low:.2f} บาท</span>
-                 </div>
-                 """, unsafe_allow_html=True)
+                 st.markdown(f'<div class="wait-zone"><b>⏳ WAIT:</b> รอรับที่ {recent_low:.2f}</div>', unsafe_allow_html=True)
         else:
-             st.markdown(f"""
-             <div class="wait-zone">
-                <b>✋ WAIT (อย่าเพิ่งไล่):</b> RSI สูง ({entry_rsi:.0f})<br>
-                <span class="price-target">รอรับที่แนวรับ: {recent_low:.2f}</span>
-             </div>
-             """, unsafe_allow_html=True)
+             st.markdown(f'<div class="wait-zone"><b>✋ WAIT:</b> RSI สูง ({entry_rsi:.0f})</div>', unsafe_allow_html=True)
 
         st.write("---")
 
-        # 2. แผนสำหรับคน "มีของ"
+        # 2. มีของ
         st.markdown("#### 💼 กรณี: มีของอยู่แล้ว")
-        
         with st.expander("📝 กรอกต้นทุนเพื่อรับคำแนะนำ", expanded=True):
             avg_cost = st.number_input("ทุนเฉลี่ย", value=0.0, step=0.1, key=f"c_{selected_symbol}")
             qty = st.number_input("จำนวนหุ้น", value=0, step=100, key=f"q_{selected_symbol}")
@@ -231,32 +219,25 @@ if data_list:
                 pct = (unrealized / (avg_cost * qty)) * 100
                 
                 if unrealized < 0:
-                    st.error(f"📉 ติดดอย {pct:.2f}% ({unrealized:,.0f} ฿)")
-                    
+                    st.error(f"📉 ติดดอย {pct:.2f}%")
                     if is_dividend_stock:
                         if current_price_default <= recent_low * 1.015:
-                            st.info(f"💉 **แนะนำ:** ซื้อถัวได้เลย! (ราคาอยู่โซนล่าง)")
-                            buy_more = st.number_input("ซื้อเพิ่ม (บาท)", value=5000, step=1000)
-                            if buy_more > 0:
-                                new_shares = buy_more / current_price_default
-                                new_avg = ((avg_cost*qty) + buy_more) / (qty + new_shares)
-                                st.write(f"👉 ทุนใหม่จะลดเหลือ: **{new_avg:.2f}**")
+                            st.info(f"💉 **แนะนำ:** ซื้อถัวได้เลย!")
                         else:
-                            st.warning(f"🧱 **แนะนำ:** ถือรอปันผล (รอให้ลงลึกกว่านี้ค่อยถัว)")
+                            st.warning(f"🧱 **แนะนำ:** ถือรอปันผล")
                     else: 
                         if current_price_default < recent_low * 0.95:
-                             st.error(f"🚨 **แนะนำ:** หลุดแนวรับ! พิจารณา CUT LOSS")
+                             st.error(f"🚨 **แนะนำ:** หลุดแนวรับ! พิจารณา CUT")
                         else:
                              st.warning("⏳ **แนะนำ:** นิ่งไว้ (Wait)")
-
                 else:
-                    st.success(f"🎉 กำไร {pct:.2f}% ({unrealized:,.0f} ฿)")
+                    st.success(f"🎉 กำไร {pct:.2f}%")
                     if is_dividend_stock:
-                        st.success("🛡️ **แนะนำ:** ถือยาวกินปันผล (Let Profit Run)")
+                        st.success("🛡️ **แนะนำ:** ถือยาวกินปันผล")
                     else:
                         if current_price_default >= recent_high * 0.98:
-                            st.error(f"💰 **แนะนำ:** ขายทำกำไร! (ชนต้าน {recent_high:.2f})")
+                            st.error(f"💰 **แนะนำ:** ขายทำกำไร!")
                         else:
-                            st.info(f"🚀 **แนะนำ:** ถือต่อ (เป้าขาย {recent_high:.2f})")
+                            st.info(f"🚀 **แนะนำ:** ถือต่อ")
 else:
     st.error("โหลดข้อมูลไม่ได้ กรุณา Refresh")
