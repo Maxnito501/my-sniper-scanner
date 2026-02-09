@@ -6,7 +6,7 @@ from plotly.subplots import make_subplots
 from datetime import datetime
 
 # --- 1. ตั้งค่าหน้าเว็บ ---
-st.set_page_config(page_title="Polaris Strategy V6.2", page_icon="💎", layout="wide")
+st.set_page_config(page_title="Polaris Strategy V6.2 Fixed", page_icon="💎", layout="wide")
 
 # Custom CSS
 st.markdown("""
@@ -26,7 +26,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.title("💎 Polaris V6.2: Sniper & Doctor Dual Core")
+st.title("💎 Polaris V6.2: Sniper & Doctor (Bug Fixed)")
 st.markdown("**วิเคราะห์แยก 2 มุมมอง: เก็งกำไรระยะสั้น (Sniper) และ แก้พอร์ตระยะยาว (Doctor)**")
 st.write("---")
 
@@ -77,7 +77,7 @@ def get_data_from_yahoo(ticker):
         return df, pe, div_yield, xd_date
     except: return None, 0, 0, "-"
 
-# --- 4. Strategy Engine (คำนวณภาพรวม) ---
+# --- 4. Strategy Engine ---
 def analyze_data(df, pe, div):
     price = df['Close'].iloc[-1]
     ema200 = df['EMA200'].iloc[-1]
@@ -85,7 +85,6 @@ def analyze_data(df, pe, div):
     
     trend = "ขาขึ้น 🐂" if price > ema200 else "ขาลง 🐻"
     
-    # Logic ภาพรวมสำหรับตาราง
     action = "Wait"
     color = "white"
     text_color = "black"
@@ -109,7 +108,6 @@ def analyze_data(df, pe, div):
 st.subheader("📊 Strategic Dashboard")
 
 data_list = []
-# สร้าง List แบบ (ชื่อโชว์, รหัสหุ้น)
 all_tickers = [(s, s) for s in STOCKS] + [(n, t) for n, t in FUNDS.items()]
 
 my_bar = st.progress(0)
@@ -134,12 +132,20 @@ if data_list:
     res_df = pd.DataFrame(data_list)
     cols = ["Symbol", "Price", "RSI", "Action", "P/E", "Div %", "Trend", "XD Date"]
     
+    # 🛠️ FIX: ฟังก์ชันระบายสีที่ถูกต้อง (ไม่ใช้ subset ใน apply)
     def highlight_rows(row):
-        return [f'background-color: {row["Color"]}; color: {row["TextColor"]}'] * len(row)
+        bg_color = row.get("Color", "white")
+        txt_color = row.get("TextColor", "black")
+        return [f'background-color: {bg_color}; color: {txt_color}'] * len(row)
+
+    # 🛠️ FIX: ลบ subset=cols ออกจาก apply เพื่อให้เห็นคอลัมน์ Color
+    styler = res_df.style.apply(highlight_rows, axis=1).format({"Price": "{:,.2f}", "RSI": "{:.1f}"})
 
     st.dataframe(
-        res_df.style.apply(highlight_rows, axis=1, subset=cols).format({"Price": "{:,.2f}", "RSI": "{:.1f}"}),
-        column_order=cols, height=400, use_container_width=True
+        styler,
+        column_order=cols, # เลือกโชว์เฉพาะคอลัมน์ที่ต้องการตรงนี้
+        height=400, 
+        use_container_width=True
     )
 
     # --- 6. Deep Dive & Dual Advisor ---
@@ -158,12 +164,10 @@ if data_list:
             
             if df_chart is not None:
                 curr_price = float(df_chart['Close'].iloc[-1])
-                # คำนวณแนวรับ/ต้าน (20 Days)
                 recent_low = df_chart['Low'].tail(20).min()
                 recent_high = df_chart['High'].tail(20).max()
                 ema_50 = df_chart['EMA50'].iloc[-1]
                 
-                # หาแนวรับที่แข็งแกร่ง (เลือกค่าที่ใกล้ปัจจุบันสุดระหว่าง Low กับ EMA)
                 support_level = max(recent_low, ema_50) if curr_price > ema_50 else recent_low
                 
                 fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_width=[0.2, 0.7])
@@ -183,67 +187,55 @@ if data_list:
     with col_advice:
         st.subheader("💡 Strategic Advisor")
         
-        rsi_val = df_chart['RSI'].iloc[-1]
-        stock_type = STOCK_DNA.get(ticker, "Growth")
-        
-        # --- BOX 1: 🔫 SNIPER STRATEGY (เล่นสั้น/เก็งกำไร) ---
-        st.markdown('<div class="sniper-card">', unsafe_allow_html=True)
-        st.markdown("#### 🔫 Sniper Mode (เล่นสั้น)")
-        
-        sniper_status = ""
-        # Logic เล่นสั้น
-        if curr_price >= recent_high * 0.99:
-            sniper_status = f"<span class='sell-text'>💰 TAKE PROFIT:</span> ราคาชนต้าน ({recent_high:.2f}) ขายทำรอบ!"
-        elif rsi_val <= 45 and curr_price <= support_level * 1.015:
-            sniper_status = f"<span class='buy-text'>🚀 FIRE NOW:</span> ชนแนวรับ ({support_level:.2f}) + RSI ต่ำ ({rsi_val:.0f})"
-        elif rsi_val <= 30:
-            sniper_status = f"<span class='buy-text'>💎 PANIC BUY:</span> ของถูกมาก (RSI {rsi_val:.0f}) สวนเทรนด์ได้"
-        else:
-            sniper_status = f"<span class='wait-text'>⏳ WAIT:</span> ราคากลางๆ รอรับที่ {support_level:.2f}"
+        if target:
+            rsi_val = df_chart['RSI'].iloc[-1]
+            stock_type = STOCK_DNA.get(ticker, "Growth")
             
-        st.markdown(sniper_status, unsafe_allow_html=True)
-        st.markdown(f"""
-        <div style="display:flex; justify-content:space-between; margin-top:10px;">
-            <div><span class="metric-label">แนวรับ (Buy)</span><br><span class="metric-value">{support_level:.2f}</span></div>
-            <div><span class="metric-label">แนวต้าน (Sell)</span><br><span class="metric-value">{recent_high:.2f}</span></div>
-        </div>
-        """, unsafe_allow_html=True)
-        st.markdown('</div>', unsafe_allow_html=True)
-
-        # --- BOX 2: 👨‍⚕️ DOCTOR STRATEGY (แก้พอร์ต/ถือยาว) ---
-        st.markdown('<div class="doctor-card">', unsafe_allow_html=True)
-        st.markdown(f"#### 👨‍⚕️ Doctor Mode (แก้พอร์ต {stock_type})")
-        
-        # Input ต้นทุน
-        c1, c2 = st.columns(2)
-        avg_cost = c1.number_input("ทุนเฉลี่ย", value=0.0, step=0.1, key=f"c_{selected_symbol}")
-        qty = c2.number_input("จำนวนหุ้น", value=0, step=100, key=f"q_{selected_symbol}")
-        
-        if qty > 0 and avg_cost > 0:
-            unrealized = (curr_price - avg_cost) * qty
-            pct = (unrealized / (avg_cost * qty)) * 100
+            # Sniper Mode
+            st.markdown('<div class="sniper-card">', unsafe_allow_html=True)
+            st.markdown("#### 🔫 Sniper Mode (เล่นสั้น)")
             
-            if unrealized < 0:
-                st.error(f"📉 ติดดอย {unrealized:,.0f} ({pct:.2f}%)")
-                # คำแนะนำแก้ดอย
-                if curr_price <= support_level * 1.015:
-                     st.info(f"💉 **แนะนำ:** ซื้อถัวได้! (ราคาถึงแนวรับแล้ว)")
-                     with st.expander("🧮 คำนวณถัว"):
-                         add = st.number_input("ซื้อเพิ่ม (หุ้น)", value=100, step=100)
-                         new_cost = ((avg_cost*qty)+(curr_price*add))/(qty+add)
-                         st.write(f"ทุนใหม่: **{new_cost:.2f}**")
-                else:
-                     st.warning(f"✋ **แนะนำ:** อย่าเพิ่งถัว (รอก่อน) รอที่ {support_level:.2f}")
+            sniper_status = ""
+            if curr_price >= recent_high * 0.99:
+                sniper_status = f"<span class='sell-text'>💰 TAKE PROFIT:</span> ราคาชนต้าน ({recent_high:.2f}) ขายทำรอบ!"
+            elif rsi_val <= 45 and curr_price <= support_level * 1.015:
+                sniper_status = f"<span class='buy-text'>🚀 FIRE NOW:</span> ชนแนวรับ ({support_level:.2f}) + RSI ต่ำ ({rsi_val:.0f})"
+            elif rsi_val <= 30:
+                sniper_status = f"<span class='buy-text'>💎 PANIC BUY:</span> ของถูกมาก (RSI {rsi_val:.0f}) สวนเทรนด์ได้"
             else:
-                st.success(f"🎉 กำไร {unrealized:,.0f} ({pct:.2f}%)")
-                if stock_type == "Dividend":
-                    st.info(f"🛡️ **แนะนำ:** ถือยาวกินปันผล ({div_yield:.2f}%)")
-                else:
-                    st.info(f"💎 **แนะนำ:** รันเทรนด์ต่อ (ขายเมื่อหลุดเส้น EMA50)")
-        else:
-            st.caption("กรอกต้นทุนเพื่อรับคำแนะนำการแก้พอร์ต")
+                sniper_status = f"<span class='wait-text'>⏳ WAIT:</span> ราคากลางๆ รอรับที่ {support_level:.2f}"
+                
+            st.markdown(sniper_status, unsafe_allow_html=True)
+            st.markdown('</div>', unsafe_allow_html=True)
+
+            # Doctor Mode
+            st.markdown('<div class="doctor-card">', unsafe_allow_html=True)
+            st.markdown(f"#### 👨‍⚕️ Doctor Mode (แก้พอร์ต {stock_type})")
             
-        st.markdown('</div>', unsafe_allow_html=True)
+            c1, c2 = st.columns(2)
+            avg_cost = c1.number_input("ทุนเฉลี่ย", value=0.0, step=0.1, key=f"c_{selected_symbol}")
+            qty = c2.number_input("จำนวนหุ้น", value=0, step=100, key=f"q_{selected_symbol}")
+            
+            if qty > 0 and avg_cost > 0:
+                unrealized = (curr_price - avg_cost) * qty
+                pct = (unrealized / (avg_cost * qty)) * 100
+                
+                if unrealized < 0:
+                    st.error(f"📉 ติดดอย {unrealized:,.0f} ({pct:.2f}%)")
+                    if curr_price <= support_level * 1.015:
+                         st.info(f"💉 **แนะนำ:** ซื้อถัวได้! (ราคาถึงแนวรับแล้ว)")
+                    else:
+                         st.warning(f"✋ **แนะนำ:** อย่าเพิ่งถัว (รอก่อน) รอที่ {support_level:.2f}")
+                else:
+                    st.success(f"🎉 กำไร {unrealized:,.0f} ({pct:.2f}%)")
+                    if stock_type == "Dividend":
+                        st.info(f"🛡️ **แนะนำ:** ถือยาวกินปันผล ({div_yield:.2f}%)")
+                    else:
+                        st.info(f"💎 **แนะนำ:** รันเทรนด์ต่อ")
+            else:
+                st.caption("กรอกต้นทุนเพื่อรับคำแนะนำการแก้พอร์ต")
+                
+            st.markdown('</div>', unsafe_allow_html=True)
 
 else:
     st.error("โหลดข้อมูลไม่ได้ กรุณา Refresh")
