@@ -6,7 +6,7 @@ from plotly.subplots import make_subplots
 from datetime import datetime
 
 # --- 1. ตั้งค่าหน้าเว็บ ---
-st.set_page_config(page_title="Polaris Strategy V6.3 Fixed", page_icon="💎", layout="wide")
+st.set_page_config(page_title="Polaris Strategy V6.4", page_icon="💎", layout="wide")
 
 # Custom CSS
 st.markdown("""
@@ -27,30 +27,25 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.title("💎 Polaris V6.3: Strategic Architect (Final Fix)")
-st.markdown("**หมอประจำพอร์ต: แยกกลยุทธ์ 'หุ้นซิ่ง' vs 'หุ้นออม' อัตโนมัติ (เกณฑ์ปันผล 3%)**")
+st.title("💎 Polaris V6.4: Strategic Architect (Strict Mode)")
+st.markdown("**หมอประจำพอร์ต: ปรับเกณฑ์ RSI ให้เข้มข้นขึ้น เพื่อความปลอดภัย**")
 st.write("---")
 
-# --- 2. ข้อมูลหุ้นและกองทุน ---
-STOCKS = [
-    "CPALL.BK", "PTT.BK", "LH.BK", "GULF.BK", 
-    "SCB.BK", "ADVANC.BK", "AOT.BK", "KBANK.BK", 
-    "BDMS.BK", "PTTEP.BK",
-    "TISCO.BK", "CPAXT.BK", "CRC.BK", "CPN.BK"
-]
-
-FUNDS = {
-    "SCBSEMI (Semi-Conductor)": "SMH", 
-    "SCBRMNDQ (Nasdaq-100)": "QQQ", 
-    "SCBRMS&P500 (S&P 500)": "SPY", 
-    "SCBGQUAL (Global Quality)": "QUAL", 
-    "Gold (ทองคำโลก)": "GLD",
-    "Silver (เงินโลก)": "SLV",      
-    "Apple (King)": "AAPL",
-    "Nvidia (AI God)": "NVDA"
+# --- 2. ข้อมูลหุ้นและนิสัย (Stock DNA) ---
+STOCK_DNA = {
+    "PTT.BK": "Dividend", "LH.BK": "Dividend", "TISCO.BK": "Dividend", 
+    "SCB.BK": "Dividend", "KBANK.BK": "Dividend", "ADVANC.BK": "Dividend",
+    "PTTEP.BK": "Dividend", 
+    "CPALL.BK": "Growth", "GULF.BK": "Growth", "AOT.BK": "Growth", 
+    "BDMS.BK": "Growth", "CPAXT.BK": "Growth", "CRC.BK": "Growth", "CPN.BK": "Growth",
+    "SMH": "Growth", "QQQ": "Growth", "SPY": "Growth", "QUAL": "Growth", 
+    "GLD": "Asset", "SLV": "Asset", "AAPL": "Growth", "NVDA": "Growth"
 }
 
-# --- 3. ฟังก์ชันดึงข้อมูล (Core Engine) ---
+STOCKS = [k for k in STOCK_DNA.keys() if ".BK" in k]
+FUNDS = {k: k for k in STOCK_DNA.keys() if ".BK" not in k}
+
+# --- 3. ฟังก์ชันดึงข้อมูล ---
 @st.cache_data(ttl=3600)
 def get_data_from_yahoo(ticker):
     try:
@@ -59,7 +54,6 @@ def get_data_from_yahoo(ticker):
         
         if len(df) < 50: return None, 0, 0, "-"
 
-        # Indicators
         df['EMA50'] = df['Close'].ewm(span=50, adjust=False).mean()
         df['EMA200'] = df['Close'].ewm(span=200, adjust=False).mean()
         
@@ -70,13 +64,10 @@ def get_data_from_yahoo(ticker):
         df['RSI'] = 100 - (100 / (1 + rs))
         df['VolMA'] = df['Volume'].rolling(20).mean()
 
-        # Fundamental & XD
-        info = stock.info
-        pe = info.get('trailingPE', 0)
-        
-        raw_div = info.get('dividendYield', 0)
+        pe = stock.info.get('trailingPE', 0)
+        raw_div = stock.info.get('dividendYield', 0)
         div_yield = (raw_div * 100) if raw_div and raw_div < 1 else (raw_div if raw_div else 0)
-        if div_yield > 20: div_yield = 0 
+        if div_yield > 20: div_yield = 0
         
         xd_ts = stock.info.get('exDividendDate')
         xd_date = datetime.fromtimestamp(xd_ts).strftime('%d/%m/%Y') if xd_ts else "-"
@@ -84,7 +75,7 @@ def get_data_from_yahoo(ticker):
         return df, pe, div_yield, xd_date
     except: return None, 0, 0, "-"
 
-# --- 4. Strategy Engine ---
+# --- 4. Strategy Engine (ปรับเกณฑ์ RSI ใหม่) ---
 def analyze_data(df, pe, div):
     price = df['Close'].iloc[-1]
     ema200 = df['EMA200'].iloc[-1]
@@ -92,27 +83,24 @@ def analyze_data(df, pe, div):
     
     if price > ema200:
         trend = "ขาขึ้น 🐂"
+        strategy = "⭐ ถือยาว/สะสม"
     else:
         trend = "ขาลง 🐻"
-    
-    # แบ่งประเภทตามปันผล
-    if div < 3.0:
-        strategy = "⚡ เล่นรอบ (Trading)"
-    else:
-        strategy = "🛡️ สะสม/ปันผล (Saving)"
+        strategy = "🛡️ เน้นปันผล/ถัว"
     
     action = "Wait"
     color = "white"
     text_color = "black"
     
-    if rsi <= 35:
-        action = "🟢 BUY DIP"
+    # Logic V6.4: เข้มข้นขึ้น (Strict)
+    if rsi <= 30:  # เดิม 35
+        action = "🟢 SNIPER BUY"
         color = "#90EE90"
     elif rsi >= 75:
-        action = "🟠 SELL HIGH"
+        action = "🟠 TAKE PROFIT"
         color = "#FFD700" 
-    elif 35 < rsi < 50 and price > ema200:
-        action = "🛒 ACCUMULATE"
+    elif 30 < rsi <= 45 and price > ema200: # ปรับเพดานลงจาก 50 เป็น 45
+        action = "🛒 ACCUMULATE" # ซื้อสะสม (Buy on Dip)
         color = "#98FB98"
         
     return price, rsi, trend, strategy, action, color, text_color
@@ -121,6 +109,7 @@ def analyze_data(df, pe, div):
 st.subheader("📊 Strategic Dashboard")
 
 data_list = []
+# สร้างลิสต์แบบ (ชื่อโชว์, รหัสหุ้น)
 all_tickers = [(s, s) for s in STOCKS] + [(n, t) for n, t in FUNDS.items()]
 
 my_bar = st.progress(0)
@@ -164,7 +153,6 @@ if data_list:
         symbol_list = [d["Symbol"] for d in data_list]
         selected_symbol = st.selectbox("เลือกหุ้นเพื่อวิเคราะห์:", symbol_list)
         
-        # 🛠️ FIX: ใช้ data_list ที่มีข้อมูลครบแล้วในการค้นหา (ปลอดภัยกว่า)
         target_data = next((item for item in data_list if item["Symbol"] == selected_symbol), None)
 
         if target_data:
@@ -182,8 +170,8 @@ if data_list:
                 fig.add_trace(go.Scatter(x=df_chart.index, y=df_chart['EMA50'], name='EMA 50', line=dict(color='orange', width=1)), row=1, col=1)
                 fig.add_trace(go.Scatter(x=df_chart.index, y=df_chart['EMA200'], name='EMA 200', line=dict(color='blue', width=2)), row=1, col=1)
                 
-                fig.add_hline(y=recent_low, line_dash="dot", line_color="green", annotation_text="Support", row=1, col=1)
-                fig.add_hline(y=recent_high, line_dash="dot", line_color="red", annotation_text="Resistance", row=1, col=1)
+                fig.add_hline(y=recent_low, line_dash="dot", line_color="green", annotation_text="Support (จุดถัว)", row=1, col=1)
+                fig.add_hline(y=recent_high, line_dash="dot", line_color="red", annotation_text="Resistance (ขาย)", row=1, col=1)
                 
                 colors = ['red' if row['Open'] > row['Close'] else 'green' for index, row in df_chart.iterrows()]
                 fig.add_trace(go.Bar(x=df_chart.index, y=df_chart['Volume'], marker_color=colors, name='Volume'), row=2, col=1)
@@ -193,19 +181,18 @@ if data_list:
     with col_doctor:
         st.subheader("👨‍⚕️ Strategic Advisor")
         
-        # คัดแยกประเภทหุ้น
         is_dividend_stock = div_yield >= 3.0
         stock_badge = "🛡️ หุ้นปันผล/ออมยาว" if is_dividend_stock else "⚡ หุ้นเติบโต/เล่นรอบ"
         badge_class = "badge-div" if is_dividend_stock else "badge-growth"
         
         st.markdown(f'<span class="strategy-badge {badge_class}">{stock_badge}</span> (P/E: {pe:.1f}, Div: {div_yield:.2f}%)', unsafe_allow_html=True)
         
-        # 1. แผนสำหรับคน "ไม่มีของ"
+        # 1. แผนสำหรับคน "ไม่มีของ" (ปรับเกณฑ์ตรงนี้ด้วย)
         st.markdown("#### 🛒 กรณี: ยังไม่มีของ (เข้าใหม่)")
         
         entry_rsi = df_chart['RSI'].iloc[-1]
         
-        if entry_rsi <= 45:
+        if entry_rsi <= 45: # ปรับจาก 50 ลงมา 45
              if current_price_default <= recent_low * 1.02:
                  st.markdown(f"""
                  <div class="buy-zone">
