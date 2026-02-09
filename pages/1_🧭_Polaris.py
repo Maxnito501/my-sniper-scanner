@@ -6,7 +6,7 @@ from plotly.subplots import make_subplots
 from datetime import datetime
 
 # --- 1. ตั้งค่าหน้าเว็บ ---
-st.set_page_config(page_title="Polaris Strategy V6.1", page_icon="💎", layout="wide")
+st.set_page_config(page_title="Polaris Strategy V6.2", page_icon="💎", layout="wide")
 
 # Custom CSS
 st.markdown("""
@@ -14,17 +14,20 @@ st.markdown("""
     @import url('https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;600&display=swap');
     html, body, [class*="css"]  { font-family: 'Kanit', sans-serif; }
     
-    .buy-zone { background-color: #dcfce7; padding: 15px; border-radius: 10px; border: 2px solid #16a34a; text-align: center; }
-    .wait-zone { background-color: #fff7ed; padding: 15px; border-radius: 10px; border: 2px solid #f97316; text-align: center; }
-    .sell-zone { background-color: #fee2e2; padding: 15px; border-radius: 10px; border: 2px solid #dc2626; text-align: center; }
-    .hold-zone { background-color: #f3f4f6; padding: 15px; border-radius: 10px; border: 2px solid #6b7280; text-align: center; }
-    .personal-zone { background-color: #e0f2fe; padding: 15px; border-radius: 10px; border: 2px solid #0284c7; }
-    .avg-calculator { background-color: #ffffff; padding: 15px; border-radius: 10px; border: 1px dashed #9ca3af; margin-top: 10px; }
+    .sniper-card { background-color: #fff1f2; padding: 15px; border-radius: 10px; border: 2px solid #e11d48; margin-bottom: 15px; }
+    .doctor-card { background-color: #eff6ff; padding: 15px; border-radius: 10px; border: 2px solid #3b82f6; margin-bottom: 15px; }
+    
+    .buy-text { color: #166534; font-weight: bold; font-size: 1.1em; }
+    .sell-text { color: #991b1b; font-weight: bold; font-size: 1.1em; }
+    .wait-text { color: #854d0e; font-weight: bold; font-size: 1.1em; }
+    
+    .metric-value { font-size: 1.2rem; font-weight: bold; }
+    .metric-label { font-size: 0.9rem; color: #6b7280; }
 </style>
 """, unsafe_allow_html=True)
 
-st.title("💎 Polaris V6.1: Portfolio Doctor (Fixed)")
-st.markdown("**หมอประจำพอร์ต: วิเคราะห์จังหวะ ถัว/ถือ/เท (รายตัว)**")
+st.title("💎 Polaris V6.2: Sniper & Doctor Dual Core")
+st.markdown("**วิเคราะห์แยก 2 มุมมอง: เก็งกำไรระยะสั้น (Sniper) และ แก้พอร์ตระยะยาว (Doctor)**")
 st.write("---")
 
 # --- 2. ข้อมูลหุ้นและนิสัย (Stock DNA) ---
@@ -42,7 +45,7 @@ STOCK_DNA = {
 }
 
 STOCKS = [k for k in STOCK_DNA.keys() if ".BK" in k]
-FUNDS = {k: k for k in STOCK_DNA.keys() if ".BK" not in k} # Map ชื่อกองทุน
+FUNDS = {k: k for k in STOCK_DNA.keys() if ".BK" not in k}
 
 # --- 3. ฟังก์ชันดึงข้อมูล ---
 @st.cache_data(ttl=3600)
@@ -74,58 +77,53 @@ def get_data_from_yahoo(ticker):
         return df, pe, div_yield, xd_date
     except: return None, 0, 0, "-"
 
-# --- 4. Strategy Engine ---
+# --- 4. Strategy Engine (คำนวณภาพรวม) ---
 def analyze_data(df, pe, div):
     price = df['Close'].iloc[-1]
     ema200 = df['EMA200'].iloc[-1]
     rsi = df['RSI'].iloc[-1]
     
-    if price > ema200:
-        trend = "ขาขึ้น 🐂"
-        strategy = "⭐ ถือยาว/สะสม"
-    else:
-        trend = "ขาลง 🐻"
-        strategy = "🛡️ เน้นปันผล/ถัว"
+    trend = "ขาขึ้น 🐂" if price > ema200 else "ขาลง 🐻"
     
+    # Logic ภาพรวมสำหรับตาราง
     action = "Wait"
     color = "white"
     text_color = "black"
     
     if rsi <= 35:
-        action = "🟢 BUY MORE"
-        color = "#90EE90"
+        action = "🟢 BUY (ถูก)"
+        color = "#dcfce7"
+        text_color = "#166534"
     elif rsi >= 75:
-        action = "🟠 TRIM PORT"
-        color = "#FFD700" 
+        action = "🔴 SELL (แพง)"
+        color = "#fee2e2"
+        text_color = "#991b1b"
     elif 35 < rsi < 50 and price > ema200:
         action = "🛒 ACCUMULATE"
-        color = "#98FB98"
+        color = "#dbeafe"
+        text_color = "#1e40af"
         
-    return price, rsi, trend, strategy, action, color, text_color
+    return price, rsi, trend, action, color, text_color
 
 # --- 5. Dashboard ---
 st.subheader("📊 Strategic Dashboard")
 
 data_list = []
-
-# 🛠️ FIX: สร้างลิสต์แบบ (ชื่อโชว์, รหัสหุ้น) ให้ถูกต้อง
+# สร้าง List แบบ (ชื่อโชว์, รหัสหุ้น)
 all_tickers = [(s, s) for s in STOCKS] + [(n, t) for n, t in FUNDS.items()]
 
 my_bar = st.progress(0)
 
-# 🛠️ FIX: วนลูปแบบ unpack (name, ticker)
 for i, (name, ticker) in enumerate(all_tickers):
     df, pe, div, xd = get_data_from_yahoo(ticker)
     
     if df is not None:
-        price, rsi, trend, strat, act, col, txt_col = analyze_data(df, pe, div)
+        price, rsi, trend, act, col, txt_col = analyze_data(df, pe, div)
         name_show = name.replace(".BK", "")
         
         data_list.append({
-            "Symbol": name_show, 
-            "Ticker": ticker, 
-            "Price": price, "RSI": rsi,
-            "Strategy": strat, "Action": act, "P/E": f"{pe:.1f}" if pe else "-",
+            "Symbol": name_show, "Ticker": ticker, "Price": price, "RSI": rsi,
+            "Action": act, "P/E": f"{pe:.1f}" if pe else "-",
             "Div %": f"{div:.2f}%" if div else "-", "XD Date": xd,
             "Trend": trend, "Color": col, "TextColor": txt_col
         })
@@ -134,30 +132,24 @@ my_bar.empty()
 
 if data_list:
     res_df = pd.DataFrame(data_list)
-    cols = ["Symbol", "Price", "RSI", "Strategy", "Action", "P/E", "Div %", "XD Date"]
+    cols = ["Symbol", "Price", "RSI", "Action", "P/E", "Div %", "Trend", "XD Date"]
     
     def highlight_rows(row):
-        bg_color = row.get("Color", "white")
-        txt_color = row.get("TextColor", "black")
-        return [f'background-color: {bg_color}; color: {txt_color}'] * len(row)
+        return [f'background-color: {row["Color"]}; color: {row["TextColor"]}'] * len(row)
 
     st.dataframe(
-        res_df.style.apply(highlight_rows, axis=1).format({"Price": "{:,.2f}", "RSI": "{:.1f}"}),
-        column_order=cols, 
-        height=500, 
-        use_container_width=True
+        res_df.style.apply(highlight_rows, axis=1, subset=cols).format({"Price": "{:,.2f}", "RSI": "{:.1f}"}),
+        column_order=cols, height=400, use_container_width=True
     )
 
-    # --- 6. Deep Dive & Personal Advisor ---
+    # --- 6. Deep Dive & Dual Advisor ---
     st.write("---")
-    col_chart, col_doctor = st.columns([1.5, 1])
+    col_chart, col_advice = st.columns([1.8, 1])
     
     with col_chart:
         st.subheader("🔍 Technical Chart")
         symbol_list = [d["Symbol"] for d in data_list]
         selected_symbol = st.selectbox("เลือกหุ้นเพื่อวิเคราะห์:", symbol_list)
-        
-        # 🛠️ FIX: ค้นหา Ticker จาก Symbol ที่เลือกให้ถูกต้อง
         target = next((item for item in data_list if item["Symbol"] == selected_symbol), None)
 
         if target:
@@ -165,102 +157,92 @@ if data_list:
             df_chart, _, div_yield, xd_date = get_data_from_yahoo(ticker)
             
             if df_chart is not None:
-                current_price_default = float(df_chart['Close'].iloc[-1])
+                curr_price = float(df_chart['Close'].iloc[-1])
+                # คำนวณแนวรับ/ต้าน (20 Days)
                 recent_low = df_chart['Low'].tail(20).min()
                 recent_high = df_chart['High'].tail(20).max()
+                ema_50 = df_chart['EMA50'].iloc[-1]
+                
+                # หาแนวรับที่แข็งแกร่ง (เลือกค่าที่ใกล้ปัจจุบันสุดระหว่าง Low กับ EMA)
+                support_level = max(recent_low, ema_50) if curr_price > ema_50 else recent_low
                 
                 fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_width=[0.2, 0.7])
                 fig.add_trace(go.Candlestick(x=df_chart.index, open=df_chart['Open'], high=df_chart['High'],
                                 low=df_chart['Low'], close=df_chart['Close'], name='Price'), row=1, col=1)
+                fig.add_trace(go.Scatter(x=df_chart.index, y=df_chart['EMA50'], name='EMA 50', line=dict(color='orange', width=1)), row=1, col=1)
                 fig.add_trace(go.Scatter(x=df_chart.index, y=df_chart['EMA200'], name='EMA 200', line=dict(color='blue', width=2)), row=1, col=1)
                 
-                fig.add_hline(y=recent_low, line_dash="dot", line_color="green", annotation_text="Support (จุดถัว)", row=1, col=1)
-                fig.add_hline(y=recent_high, line_dash="dot", line_color="red", annotation_text="Resistance (ขาย)", row=1, col=1)
+                fig.add_hline(y=support_level, line_dash="dot", line_color="green", annotation_text="Support", row=1, col=1)
+                fig.add_hline(y=recent_high, line_dash="dot", line_color="red", annotation_text="Resistance", row=1, col=1)
                 
                 colors = ['red' if row['Open'] > row['Close'] else 'green' for index, row in df_chart.iterrows()]
                 fig.add_trace(go.Bar(x=df_chart.index, y=df_chart['Volume'], marker_color=colors, name='Volume'), row=2, col=1)
                 fig.update_layout(height=600, xaxis_rangeslider_visible=False, margin=dict(l=0, r=0, t=30, b=0))
                 st.plotly_chart(fig, use_container_width=True)
 
-    with col_doctor:
-        st.subheader("👨‍⚕️ Portfolio Doctor")
-        st.markdown('<div class="personal-zone">', unsafe_allow_html=True)
-        st.markdown(f"#### 💼 แผนการเล่น {selected_symbol}")
+    with col_advice:
+        st.subheader("💡 Strategic Advisor")
         
-        avg_cost = st.number_input("ต้นทุนเฉลี่ย", value=0.0, step=0.1, format="%.2f", key=f"cost_{selected_symbol}")
-        qty = st.number_input("จำนวนหุ้น", value=0, step=100, key=f"qty_{selected_symbol}")
-        
+        rsi_val = df_chart['RSI'].iloc[-1]
         stock_type = STOCK_DNA.get(ticker, "Growth")
         
+        # --- BOX 1: 🔫 SNIPER STRATEGY (เล่นสั้น/เก็งกำไร) ---
+        st.markdown('<div class="sniper-card">', unsafe_allow_html=True)
+        st.markdown("#### 🔫 Sniper Mode (เล่นสั้น)")
+        
+        sniper_status = ""
+        # Logic เล่นสั้น
+        if curr_price >= recent_high * 0.99:
+            sniper_status = f"<span class='sell-text'>💰 TAKE PROFIT:</span> ราคาชนต้าน ({recent_high:.2f}) ขายทำรอบ!"
+        elif rsi_val <= 45 and curr_price <= support_level * 1.015:
+            sniper_status = f"<span class='buy-text'>🚀 FIRE NOW:</span> ชนแนวรับ ({support_level:.2f}) + RSI ต่ำ ({rsi_val:.0f})"
+        elif rsi_val <= 30:
+            sniper_status = f"<span class='buy-text'>💎 PANIC BUY:</span> ของถูกมาก (RSI {rsi_val:.0f}) สวนเทรนด์ได้"
+        else:
+            sniper_status = f"<span class='wait-text'>⏳ WAIT:</span> ราคากลางๆ รอรับที่ {support_level:.2f}"
+            
+        st.markdown(sniper_status, unsafe_allow_html=True)
+        st.markdown(f"""
+        <div style="display:flex; justify-content:space-between; margin-top:10px;">
+            <div><span class="metric-label">แนวรับ (Buy)</span><br><span class="metric-value">{support_level:.2f}</span></div>
+            <div><span class="metric-label">แนวต้าน (Sell)</span><br><span class="metric-value">{recent_high:.2f}</span></div>
+        </div>
+        """, unsafe_allow_html=True)
+        st.markdown('</div>', unsafe_allow_html=True)
+
+        # --- BOX 2: 👨‍⚕️ DOCTOR STRATEGY (แก้พอร์ต/ถือยาว) ---
+        st.markdown('<div class="doctor-card">', unsafe_allow_html=True)
+        st.markdown(f"#### 👨‍⚕️ Doctor Mode (แก้พอร์ต {stock_type})")
+        
+        # Input ต้นทุน
+        c1, c2 = st.columns(2)
+        avg_cost = c1.number_input("ทุนเฉลี่ย", value=0.0, step=0.1, key=f"c_{selected_symbol}")
+        qty = c2.number_input("จำนวนหุ้น", value=0, step=100, key=f"q_{selected_symbol}")
+        
         if qty > 0 and avg_cost > 0:
-            market_val = current_price_default * qty
-            cost_val = avg_cost * qty
-            unrealized = market_val - cost_val
-            pct = (unrealized / cost_val) * 100
+            unrealized = (curr_price - avg_cost) * qty
+            pct = (unrealized / (avg_cost * qty)) * 100
             
             if unrealized < 0:
-                st.error(f"📉 ขาดทุน: {unrealized:,.0f} ฿ ({pct:.2f}%)")
-                
-                if current_price_default <= recent_low * 1.015:
-                    st.markdown(f"""
-                    <div class="buy-zone">
-                        <h3>💉 จ่ายยา: ซื้อถัว (Average Down)</h3>
-                        <p>ราคาลงมาที่แนวรับสำคัญ ({recent_low:.2f})</p>
-                    </div>
-                    """, unsafe_allow_html=True)
-                    
-                    st.markdown('<div class="avg-calculator">', unsafe_allow_html=True)
-                    st.markdown("**🧮 เครื่องคำนวณต้นทุนใหม่**")
-                    add_amt = st.number_input("จะซื้อเพิ่มกี่บาท?", value=5000, step=1000, key=f"calc_amt_{selected_symbol}")
-                    if add_amt > 0:
-                        add_shares = int(add_amt / current_price_default)
-                        new_avg = ((avg_cost * qty) + (current_price_default * add_shares)) / (qty + add_shares)
-                        diff = avg_cost - new_avg
-                        st.info(f"👉 ได้หุ้นเพิ่ม: **{add_shares}** หุ้น")
-                        st.success(f"📉 ต้นทุนลดลงเหลือ: **{new_avg:.2f}** (ลดไป {diff:.2f} บาท)")
-                    st.markdown('</div>', unsafe_allow_html=True)
-                    
+                st.error(f"📉 ติดดอย {unrealized:,.0f} ({pct:.2f}%)")
+                # คำแนะนำแก้ดอย
+                if curr_price <= support_level * 1.015:
+                     st.info(f"💉 **แนะนำ:** ซื้อถัวได้! (ราคาถึงแนวรับแล้ว)")
+                     with st.expander("🧮 คำนวณถัว"):
+                         add = st.number_input("ซื้อเพิ่ม (หุ้น)", value=100, step=100)
+                         new_cost = ((avg_cost*qty)+(curr_price*add))/(qty+add)
+                         st.write(f"ทุนใหม่: **{new_cost:.2f}**")
                 else:
-                    st.markdown(f"""
-                    <div class="wait-zone">
-                        <h3>🛌 จ่ายยา: นอนพัก (Wait)</h3>
-                        <p>ราคายังลอยอยู่ (แนวรับถัดไป {recent_low:.2f}) อย่าเพิ่งถัว</p>
-                    </div>
-                    """, unsafe_allow_html=True)
-
+                     st.warning(f"✋ **แนะนำ:** อย่าเพิ่งถัว (รอก่อน) รอที่ {support_level:.2f}")
             else:
-                st.success(f"🎉 กำไร: +{unrealized:,.0f} ฿ (+{pct:.2f}%)")
+                st.success(f"🎉 กำไร {unrealized:,.0f} ({pct:.2f}%)")
                 if stock_type == "Dividend":
-                    st.markdown("""
-                    <div class="hold-zone">
-                        <h3>🛡️ คำแนะนำ: ถือต่อ (Hold for Yield)</h3>
-                        <p>หุ้นปันผลเน้นถือยาว เก็บกินดอกเบี้ย ไม่ต้องรีบขาย</p>
-                    </div>
-                    """, unsafe_allow_html=True)
+                    st.info(f"🛡️ **แนะนำ:** ถือยาวกินปันผล ({div_yield:.2f}%)")
                 else:
-                    if current_price_default >= recent_high * 0.98:
-                        st.markdown(f"""
-                        <div class="sell-zone">
-                            <h3>💰 คำแนะนำ: ขายทำกำไร (Take Profit)</h3>
-                            <p>ราคาชนแนวต้าน ({recent_high:.2f})</p>
-                        </div>
-                        """, unsafe_allow_html=True)
-                    else:
-                        st.markdown("""
-                        <div class="hold-zone">
-                            <h3>🚀 คำแนะนำ: รันเทรนด์ (Let Profit Run)</h3>
-                            <p>ราคายังไปต่อได้</p>
-                        </div>
-                        """, unsafe_allow_html=True)
+                    st.info(f"💎 **แนะนำ:** รันเทรนด์ต่อ (ขายเมื่อหลุดเส้น EMA50)")
         else:
-            st.info("กรอกต้นทุนเพื่อรับคำแนะนำแก้พอร์ต")
-            st.markdown(f"**นิสัยหุ้นตัวนี้:** {stock_type}")
+            st.caption("กรอกต้นทุนเพื่อรับคำแนะนำการแก้พอร์ต")
             
-            if current_price_default <= recent_low * 1.02:
-                st.success(f"✅ น่าซื้อ: ราคาใกล้แนวรับ {recent_low:.2f}")
-            else:
-                st.warning(f"⏳ รอซื้อ: แนวรับถัดไป {recent_low:.2f} (ตอนนี้แพงไป)")
-
         st.markdown('</div>', unsafe_allow_html=True)
 
 else:
