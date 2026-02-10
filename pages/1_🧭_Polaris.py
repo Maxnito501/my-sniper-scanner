@@ -21,7 +21,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.title("💎 Polaris V7.0: Zen Edition (Fast & Stable)")
+st.title("💎 Polaris V7.0: Zen Edition (Bug Fixed)")
 st.markdown("**ระบบเทรดฉบับลีน: ตัดความซับซ้อน เน้นความแม่นยำของกราฟและ RSI**")
 st.write("---")
 
@@ -183,7 +183,8 @@ if batch_data is not None:
             st.subheader("👨‍⚕️ Portfolio Doctor")
             st.info(f"กำลังวิเคราะห์: **{selected_name}**")
             
-            stock_dna = STOCK_DNA[selected_ticker]['Type']
+            # 🛠️ FIX: ใช้ STOCK_DB แทน STOCK_DNA (แก้ชื่อตัวแปรให้ตรงกัน)
+            stock_dna = STOCK_DB[selected_ticker]['Type']
             curr_price = df_chart['Close'].iloc[-1]
             curr_rsi = df_chart['RSI'].iloc[-1]
             
