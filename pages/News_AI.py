@@ -53,68 +53,81 @@ def get_stock_price(symbol):
     return 0.0, 0.0
 
 def fetch_news_stealth(limit=5):
-    """ดึงข่าวแบบหลบหลีก (Stealth Mode) + มีแผนสำรอง"""
+    """ดึงข่าวแบบ 3 ชั้น (SET -> Sanook -> Google News)"""
     
-    # แผน A: ตลาดหลักทรัพย์ (SET)
-    url_primary = "https://www.set.or.th/rss/news_th.xml"
+    # แผน A: ตลาดหลักทรัพย์ (SET) - ข่าว Official
+    url_set = "https://www.set.or.th/rss/news_th.xml"
     
-    # แผน B: ข่าวหุ้นจาก Sanook Money (สำรอง)
-    url_backup = "https://www.sanook.com/money/rss/news/"
+    # แผน B: Sanook Money - ข่าวไว
+    url_sanook = "https://www.sanook.com/money/rss/news/"
+    
+    # แผน C: Google News (ไม้ตาย) - ไม่มีวันล่ม
+    # ค้นหาคำว่า "หุ้นไทย"
+    url_google = "https://news.google.com/rss/search?q=%E0%B8%AB%E0%B8%B8%E0%B9%89%E0%B8%99%E0%B9%84%E0%B8%97%E0%B8%A2&hl=th&gl=TH&ceid=TH:th"
     
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8"
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     }
     
     items = []
     source_used = "SET Official"
-    
+    feed = None
+
+    # --- เริ่มปฏิบัติการ ---
     try:
-        # ลองแผน A ก่อน
-        response = requests.get(url_primary, headers=headers, timeout=10)
-        
-        # ถ้า Error (เช่น 403 Forbidden) ให้โยน Exception ไปแผน B เลย
-        if response.status_code != 200:
-            raise Exception(f"SET Blocked: Status {response.status_code}")
-            
-        feed = feedparser.parse(response.content)
-        
-        # ถ้าอ่านได้แต่ไม่มีข่าว (RSS ว่างเปล่า)
-        if len(feed.entries) == 0:
-            raise Exception("SET Empty Feed")
-
-    except Exception as e:
-        # แผน A ล่ม -> เริ่มแผน B (Sanook)
-        print(f"Plan A Failed ({e}), Switching to Plan B...")
-        source_used = "Sanook Money (Backup)"
-        try:
-            response = requests.get(url_backup, headers=headers, timeout=10)
+        # 1. ลองแผน A (SET)
+        response = requests.get(url_set, headers=headers, timeout=5)
+        if response.status_code == 200:
             feed = feedparser.parse(response.content)
-        except Exception as e_backup:
-            return [], f"All sources failed: {e_backup}"
+        
+        # ถ้าแผน A ว่างเปล่า ให้โยนไปแผน B
+        if not feed or len(feed.entries) == 0:
+            raise Exception("SET Empty")
 
-    # แปลงข้อมูลให้เป็น Format เดียวกัน
-    for entry in feed.entries[:limit]:
-        title = entry.title
-        symbol = "-"
-        
-        # Logic แกะชื่อหุ้น (ปรับให้รองรับทั้ง SET และ Backup)
-        # SET format: "PTT : แจ้ง..."
-        # Backup format: อาจไม่มีชื่อหุ้นนำหน้า
-        if ":" in title:
-            possible = title.split(":")[0].strip()
-            # เช็คว่าเป็นชื่อหุ้นภาษาอังกฤษไหม (ยาว 2-8 ตัวอักษร)
-            if possible.isalnum() and possible.isascii() and 2 <= len(possible) <= 8:
-                symbol = possible
-        
-        items.append({
-            "title": title, 
-            "link": entry.link, 
-            "symbol": symbol, 
-            "time": entry.published if 'published' in entry else "Just now",
-            "source_name": source_used
-        })
-        
+    except Exception:
+        try:
+            # 2. ลองแผน B (Sanook)
+            source_used = "Sanook Money"
+            response = requests.get(url_sanook, headers=headers, timeout=5)
+            feed = feedparser.parse(response.content)
+            
+            if not feed or len(feed.entries) == 0:
+                raise Exception("Sanook Empty")
+                
+        except Exception:
+            # 3. ลองแผน C (Google News) - ไม้ตาย
+            try:
+                source_used = "Google News (Backup)"
+                response = requests.get(url_google, timeout=5) # Google ไม่ต้องใช้ Header ก็ได้
+                feed = feedparser.parse(response.content)
+            except Exception as e_final:
+                return [], f"ยอมแพ้ครับ เชื่อมต่อไม่ได้เลย: {e_final}"
+
+    # --- แปลงร่างข้อมูล (Parser) ---
+    if feed and feed.entries:
+        for entry in feed.entries[:limit]:
+            title = entry.title
+            symbol = "-"
+            
+            # Logic แกะชื่อหุ้น (ปรับให้ฉลาดขึ้น)
+            # พยายามหาคำภาษาอังกฤษตัวใหญ่ 2-8 ตัวอักษร ในหัวข้อข่าว
+            words = title.split()
+            for w in words:
+                clean_w = w.strip(".:()[]")
+                if clean_w.isupper() and clean_w.isalnum() and 2 <= len(clean_w) <= 6:
+                    # กรองคำทั่วไปที่ไม่ใช่หุ้นออก
+                    if clean_w not in ["UPDATE", "SET", "MAI", "IPO", "NEWS"]:
+                        symbol = clean_w
+                        break
+            
+            items.append({
+                "title": title, 
+                "link": entry.link, 
+                "symbol": symbol, 
+                "time": entry.published if 'published' in entry else "Just now",
+                "source_name": source_used
+            })
+            
     return items, None
 
 # ==========================================
