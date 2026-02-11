@@ -3,6 +3,7 @@ import pandas as pd
 import time
 import yfinance as yf
 import feedparser
+import requests  # <--- ตัวช่วยเจาะเกราะ SET
 from ai_sentiment import get_ai_sentiment
 
 # ==========================================
@@ -32,7 +33,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. ฟังก์ชันระบบ
+# 2. ฟังก์ชันระบบ (News & Price)
 # ==========================================
 def get_stock_price(symbol):
     if not symbol or symbol == "-": return 0.0, 0.0
@@ -49,19 +50,39 @@ def get_stock_price(symbol):
     return 0.0, 0.0
 
 def fetch_set_news(limit=5):
-    feed = feedparser.parse("https://www.set.or.th/rss/news_th.xml")
-    items = []
-    for entry in feed.entries[:limit]:
-        title = entry.title
-        symbol = "-"
-        if ":" in title:
-            possible = title.split(":")[0].strip()
-            if possible.isalnum() and possible.isascii(): symbol = possible
-        items.append({"title": title, "link": entry.link, "symbol": symbol, "time": entry.published})
-    return items
+    """ดึงข่าวจาก RSS Feed ของ SET โดยปลอมตัวเป็น Browser"""
+    rss_url = "https://www.set.or.th/rss/news_th.xml"
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36"
+    }
+    
+    try:
+        response = requests.get(rss_url, headers=headers, timeout=10)
+        feed = feedparser.parse(response.content)
+        
+        items = []
+        for entry in feed.entries[:limit]:
+            title = entry.title
+            symbol = "-"
+            if ":" in title:
+                possible = title.split(":")[0].strip()
+                if possible.isalnum() and possible.isascii():
+                    symbol = possible
+            
+            items.append({
+                "title": title, 
+                "link": entry.link, 
+                "symbol": symbol, 
+                "time": entry.published
+            })
+        return items
+        
+    except Exception as e:
+        st.error(f"เกิดข้อผิดพลาดในการดึงข่าว: {e}")
+        return []
 
 # ==========================================
-# 3. ส่วนแสดงผลหลัก
+# 3. ส่วนแสดงผลหลัก (Main Interface)
 # ==========================================
 st.title("🚀 P'Boh Command Center")
 st.caption("ศูนย์บัญชาการวิศวกรรมและการลงทุน | สถานะ: Online 🟢")
@@ -100,12 +121,12 @@ with tab_menu:
 with tab_news:
     st.header("⚡ Live Market Feed")
     
-    # ส่วนควบคุมด้านบน (ปุ่ม Auto)
+    # ส่วนควบคุม
     col_btn, col_status = st.columns([1, 3])
     with col_btn:
         run_scan = st.button("🔄 สแกนข่าวล่าสุด (Auto)", type="primary")
 
-    # ส่วนกรอกมือ (Manual Input) - ใส่ไว้ใน Expander จะได้ไม่รก
+    # ส่วนกรอกมือ (Manual Input)
     with st.expander("✍️ กรอกข่าวเอง (Manual Input) - คลิกที่นี่"):
         with st.form("manual_news_form"):
             col_man1, col_man2 = st.columns([1, 2])
@@ -124,15 +145,18 @@ with tab_news:
     if run_scan:
         with st.spinner("⏳ กำลังเชื่อมต่อดาวเทียมตลาดหลักทรัพย์..."):
             news_items = fetch_set_news(limit=5)
-            for news in news_items:
-                ai_res = get_ai_sentiment(news['title'])
-                price, change = get_stock_price(news['symbol'])
-                st.session_state.home_news_history.insert(0, {
-                    "symbol": news['symbol'], "news": news['title'],
-                    "score": ai_res['score'], "reasoning": ai_res['reasoning'],
-                    "price": price, "change": change, "timestamp": time.strftime("%H:%M:%S")
-                })
-        st.success("อัปเดตข้อมูลเรียบร้อย!")
+            if not news_items:
+                st.warning("⚠️ ไม่พบข่าว หรือตลาดหลักทรัพย์ปิดกั้นการเชื่อมต่อชั่วคราว")
+            else:
+                for news in news_items:
+                    ai_res = get_ai_sentiment(news['title'])
+                    price, change = get_stock_price(news['symbol'])
+                    st.session_state.home_news_history.insert(0, {
+                        "symbol": news['symbol'], "news": news['title'],
+                        "score": ai_res['score'], "reasoning": ai_res['reasoning'],
+                        "price": price, "change": change, "timestamp": time.strftime("%H:%M:%S")
+                    })
+                st.success(f"อัปเดตข้อมูลสำเร็จ {len(news_items)} รายการ!")
 
     # Logic 2: Manual Submit
     if manual_submit and manual_text:
