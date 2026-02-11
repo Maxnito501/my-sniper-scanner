@@ -44,31 +44,45 @@ def get_stock_price(symbol):
         pass
     return 0.0, 0.0
 
-def fetch_set_news(limit=3):
-    """ดึงข่าวจาก RSS Feed ของตลาดหลักทรัพย์"""
+ddef fetch_set_news(limit=5):
+    """
+    ดึงข่าวจาก RSS Feed ของ SET โดยปลอมตัวเป็น Browser เพื่อหลบ Firewall
+    """
     rss_url = "https://www.set.or.th/rss/news_th.xml"
-    feed = feedparser.parse(rss_url)
-    news_items = []
     
-    # วนลูปเอาข่าวล่าสุดตามจำนวนที่กำหนด (limit)
-    for entry in feed.entries[:limit]:
-        # พยายามแกะชื่อหุ้นจากหัวข้อข่าว (ส่วนใหญ่จะขึ้นต้นด้วยชื่อหุ้น เช่น "PTT : ...")
-        title = entry.title
-        symbol = "-"
-        if ":" in title:
-            possible_symbol = title.split(":")[0].strip()
-            # เช็คหน่อยว่าเป็นภาษาอังกฤษล้วนไหม (ชื่อหุ้นต้องเป็น Eng)
-            if possible_symbol.isalnum() and possible_symbol.isascii():
-                symbol = possible_symbol
-
-        news_items.append({
-            "title": title,
-            "link": entry.link,
-            "published": entry.published,
-            "symbol": symbol
-        })
-    return news_items
-
+    # Header ปลอมตัว (สำคัญมาก! ถ้าไม่มีบรรทัดนี้จะโดนบล็อก)
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36"
+    }
+    
+    try:
+        # 1. ใช้ requests ยิงไปขอข้อมูลก่อน (แบบเนียนๆ)
+        response = requests.get(rss_url, headers=headers, timeout=10)
+        
+        # 2. เอาข้อมูลที่ได้มาโยนให้ feedparser แกะ
+        feed = feedparser.parse(response.content)
+        
+        items = []
+        for entry in feed.entries[:limit]:
+            title = entry.title
+            symbol = "-"
+            # พยายามแกะชื่อหุ้น
+            if ":" in title:
+                possible = title.split(":")[0].strip()
+                if possible.isalnum() and possible.isascii():
+                    symbol = possible
+            
+            items.append({
+                "title": title, 
+                "link": entry.link, 
+                "symbol": symbol, 
+                "time": entry.published
+            })
+        return items
+        
+    except Exception as e:
+        st.error(f"เกิดข้อผิดพลาดในการดึงข่าว: {e}")
+        return []
 # ==========================================
 # 3. Sidebar: แผงควบคุม
 # ==========================================
