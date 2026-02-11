@@ -142,7 +142,29 @@ with tab_news:
 
     if st.session_state.home_news_history:
         for item in st.session_state.home_news_history:
-            # Theme สี
+            # Theme สี (จุดที่ Error คือบรรทัดข้างล่างนี้ครับ)
             score = item['score']
             if score > 0: theme = ("positive-card", "🟢", "green")
-            elif score < 0: theme = ("
+            elif score < 0: theme = ("negative-card", "🔴", "red")  # <--- เช็คบรรทัดนี้ให้ครบนะครับ
+            else: theme = ("neutral-card", "⚪", "gray")
+            
+            # ป้ายราคา
+            price_info = ""
+            if item['price'] > 0:
+                arrow = "▲" if item['change'] >= 0 else "▼"
+                color = "green" if item['change'] >= 0 else "red"
+                price_info = f"<span style='background:{color}; color:white; padding:2px 8px; border-radius:10px;'>{item['price']} ({arrow}{item['change']:.2f}%)</span>"
+
+            st.markdown(f"""
+            <div class="{theme[0]}">
+                <div style="display:flex; justify-content:space-between;">
+                    <h4>{theme[1]} Score: {score} &nbsp; {price_info}</h4>
+                    <small>{item['timestamp']}</small>
+                </div>
+                <b>[{item['symbol']}]</b> {item['news']}
+                <hr style="margin:5px 0">
+                <p style="color:{theme[2]}"><b>💡 AI:</b> {item['reasoning']}</p>
+            </div>
+            """, unsafe_allow_html=True)
+    else:
+        st.info("กดปุ่ม 'สแกนข่าวล่าสุด' เพื่อเริ่มดึงข้อมูล")
