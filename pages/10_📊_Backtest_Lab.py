@@ -34,9 +34,11 @@ with col_in2:
     period = st.selectbox("เลือกช่วงเวลาย้อนหลัง", ["1y", "2y", "5y", "max"], index=0)
 
 if st.button("🚀 เริ่มการทดสอบ (Backtest)"):
-    with st.spinner('กำลังคำนวณข้อมูลย้อนหลัง...'):
-        ticker_symbol = f"{symbol}.BK"
-        data = yf.download(ticker_symbol, period=period)
+    # เติม .BK ให้อัตโนมัติถ้าพี่ไม่ได้พิมพ์มา
+    search_symbol = symbol if symbol.endswith(".BK") else f"{symbol}.BK"
+    
+    with st.spinner(f'กำลังดึงข้อมูล {search_symbol}...'):
+        data = yf.download(search_symbol, period=period)
 
         if not data.empty:
             # คำนวณค่าทางสถิติ
