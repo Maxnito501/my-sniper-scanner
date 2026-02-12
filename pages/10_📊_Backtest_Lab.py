@@ -5,8 +5,8 @@ import requests
 import json
 
 # --- 1. ตั้งค่า LINE Messaging API (Suchat501) ---
-LINE_ACCESS_TOKEN = "H43q8chMtySOrsR4jUo+A7Vrj+MqRIlwxRRjnGP4jnlwnl7CQRRmrtmgbLuTr6ABMPD0tPC8GFIHEdU/AFGLRef7F1ROXUrfhJlgwJwEchvW+V0EJxbV2gkqPrn1EpoRqOBPOQaeFmazkft+d0u8WQdB04t89/1O/w1cDnyilFU="
-LINE_USER_ID = "Ue09863f4de737b7a9bb131623b06dc22"
+LINE_ACCESS_TOKEN = "XgyfEQh3dozGzEKKXVDUfWVBfBw+gX3yV976yTMnMnwPb+f9pHmytApjipzjXqhz/4IFB+qzMBpXx53NXTwaMMEZ+ctG6touSTIV4dXVEoWxoy5arbYVkkd2sxNCR0bX3GDc4A/XqjhnB38caUjyjQdB04t89/1O/w1cDnyilFU="
+LINE_USER_ID = "Ua666a6ab22c5871d5cf4dc99d0f5045c"
 
 def send_to_line(message):
     url = "https://api.line.me/v2/bot/message/push"
