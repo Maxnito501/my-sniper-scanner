@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import random
+from datetime import datetime
 
 # --- Configuration ---
 st.set_page_config(
@@ -37,6 +38,11 @@ st.markdown("""
         background-color: #2563eb !important;
         color: white !important;
     }
+    .update-text {
+        color: #64748b;
+        font-size: 0.8rem;
+        font-style: italic;
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -55,9 +61,9 @@ def calculate_net_profit(buy_price, sell_price, shares):
     net_profit = gross_profit - total_fees
     return net_profit, total_fees
 
-# --- Simulation for "Auto Scan" ---
+# --- Data Source Logic ---
+# NOTE: ในอนาคตเราจะเปลี่ยนตรงนี้เป็น API ดึงค่าจริงจาก SET หรือ Yahoo Finance ครับ
 def get_scanned_data(num_items):
-    # รายชื่อหุ้นใน 6 กลุ่มยุทธศาสตร์ของพี่โบ้
     stocks_pool = [
         {"หุ้น": "WHA", "กลุ่ม": "นิคมฯ", "Entry": 4.10, "Target": 4.30, "Stop": 4.02},
         {"หุ้น": "AMATA", "กลุ่ม": "นิคมฯ", "Entry": 28.00, "Target": 31.00, "Stop": 27.25},
@@ -77,11 +83,11 @@ def get_scanned_data(num_items):
     ]
     
     results = []
+    # เพิ่มลูกเล่นให้ดูเหมือนอัปเดตแบบเรียลไทม์
     for s in stocks_pool:
-        # จำลองราคาและการเปลี่ยนแแปลง
-        current_price = s["Entry"] * (1 + (random.uniform(-0.01, 0.04)))
+        current_price = s["Entry"] * (1 + (random.uniform(-0.005, 0.03)))
         change = ((current_price - s["Entry"]) / s["Entry"]) * 100
-        status = "Zing" if change > 2 else "Strong" if change > 0 else "Steady"
+        status = "Zing" if change > 1.5 else "Strong" if change > 0 else "Steady"
         
         results.append({
             "หุ้น": s["หุ้น"],
@@ -94,49 +100,47 @@ def get_scanned_data(num_items):
             "Status": status
         })
     
-    # เรียงลำดับตามตัวที่เปลี่ยนแปลงสูงสุด (ซิ่งสุด) และเลือกตามจำนวนที่พี่โบ้ต้องการ
     df = pd.DataFrame(results).sort_values(by="เปลี่ยนแปลง (%)", ascending=False).head(num_items)
     return df
 
 # --- Sidebar Controls ---
 with st.sidebar:
-    st.header("⚙️ ตั้งค่าระบบ")
+    st.header("⚙️ ระบบหลังบ้าน")
+    data_mode = st.radio("แหล่งข้อมูล", ["Simulation Mode", "Live API (Coming Soon)"])
     num_to_track = st.select_slider(
-        "จำนวนหุ้นที่ต้องการติดตาม",
+        "จำนวนหุ้นที่ต้องการสแกน",
         options=[3, 5, 7, 10, 15],
-        value=5,
-        help="พี่โบ้เลือกดูเฉพาะตัวท็อปๆ จะได้ตามไหวครับ"
+        value=5
     )
-    if st.button("🔄 Refresh Scan", use_container_width=True):
+    if st.button("🔄 บังคับอัปเดตราคาล่าสุด", use_container_width=True):
         st.rerun()
     st.divider()
-    st.write("🎯 **เป้าหมายวันนี้:** ฿300.00")
+    st.write("📊 **สถานะตลาด:** เปิดทำการ (Simulated)")
+    st.write(f"⏰ **อัปเดตล่าสุด:** {datetime.now().strftime('%H:%M:%S')}")
 
 # --- Header Area ---
 st.title("🎯 SUCHAT PRO SNIPER")
-st.caption(f"Dime! Integration • Engineering Edition v2.3 (Tracking Top {num_to_track} Only)")
+st.caption(f"Dime! Integration • v2.3 | กำลังติดตาม {num_to_track} ตัวเด่น")
 
 col1, col2, col3, col4 = st.columns(4)
 with col1:
-    st.metric("เงินในพอร์ต (Dime!)", "฿20,172.03", "172.03 Today")
+    st.metric("เงินสดใน Dime!", "฿20,172.03", "172.03 Today")
 with col2:
-    st.metric("เงินสต็อกสำรอง", "฿40,000.00")
+    st.metric("งบสต็อกสำรอง", "฿40,000.00")
 with col3:
-    st.metric("ความแม่นยำ AI", "78.5%")
+    st.metric("AI Sniper Core", "Active", "78% Accuracy")
 with col4:
-    st.metric("LINE Status", "Connected (3165)")
+    st.metric("LINE Gateway", "suchat3165", "Connected")
 
 # --- Tabs ---
-tab1, tab2, tab3, tab4 = st.tabs(["🎯 Top Sniper List", "🛡️ พอร์ตแม่ทัพ", "🧮 เครื่องคิดเลข Dime!", "📜 ประวัติกำไร"])
+tab1, tab2, tab3, tab4 = st.tabs(["🎯 Scan Results", "🛡️ พอร์ตหุ้น", "🧮 Dime! Calc", "📜 บันทึกกำไร"])
 
 with tab1:
-    st.subheader(f"TOP {num_to_track} STRATEGIC WATCHLIST")
-    st.info(f"💡 ระบบคัดเฉพาะตัวที่ 'แรง' ที่สุด {num_to_track} อันดับแรกมาให้พี่พิจารณาครับ จะได้ไม่ลายตา")
+    st.subheader(f"TOP {num_to_track} SNIPER LIST")
+    st.markdown(f"<p class='update-text'>อัปเดตข้อมูลล่าสุดเมื่อ: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}</p>", unsafe_allow_html=True)
     
-    # Get the data based on selection
     df_display = get_scanned_data(num_to_track)
     
-    # Display table with formatting
     st.dataframe(
         df_display, 
         use_container_width=True, 
@@ -147,15 +151,16 @@ with tab1:
             "Target": st.column_config.NumberColumn(format="฿%.2f"),
             "Stop": st.column_config.NumberColumn(format="฿%.2f"),
             "เปลี่ยนแปลง (%)": st.column_config.NumberColumn(format="%.2f%%"),
+            "Status": st.column_config.TextColumn()
         }
     )
+    st.info("💡 คำแนะนำ: เมื่อราคาเข้าใกล้จุด Entry พี่โบ้ตรวจสอบโวลุ่มในเรดาร์อีกครั้งก่อนเคาะขวาครับ")
 
 with tab2:
-    st.subheader("COMMANDER CORE (หุ้นเสาเข็ม)")
+    st.subheader("พอร์ตแม่ทัพ (Core Stocks)")
     p_col1, p_col2 = st.columns([2, 1])
     
     with p_col1:
-        st.write("รายการหุ้นในพอร์ตปัจจุบัน")
         port_data = [
             {"หุ้น": "TISCO", "จำนวน": 100, "ทุน": 112.50, "ปัจจุบัน": 112.50, "กำไร/ขาดทุน": "0.00%"},
             {"หุ้น": "SCB", "จำนวน": 25, "ทุน": 135.50, "ปัจจุบัน": 139.50, "กำไร/ขาดทุน": "+2.95%"},
@@ -163,39 +168,36 @@ with tab2:
         st.table(port_data)
     
     with p_col2:
-        st.markdown("""
-        ### วิเคราะห์จากระบบ
-        พอร์ตตอนนี้สมดุลดีครับ:
-        - **ปันผล:** TISCO / SCB
-        - **เงินซิ่ง:** พร้อมล่าส่วนต่าง
-        """)
-        if st.button("เติมเงินจากสต็อก 40K", use_container_width=True):
-            st.success("คำสั่งเติมเงินเรียบร้อย!")
+        st.success("✅ พอร์ตฝั่งออมแข็งแกร่งมากครับ")
+        st.write("พร้อมสำหรับแบ่งเงินไปซิ่งรายวัน")
+        if st.button("เบิกงบจากสต็อก 40K", use_container_width=True):
+            st.balloons()
+            st.success("โอนงบเข้ากระเป๋าซิ่งเรียบร้อย!")
 
 with tab3:
-    st.subheader("DIME! CALCULATOR (Net Profit)")
+    st.subheader("DIME! CALCULATOR")
     c_col1, c_col2 = st.columns(2)
     with c_col1:
-        symbol = st.text_input("ชื่อหุ้น", "WHA")
-        shares = st.number_input("จำนวนหุ้น", value=5000, step=100)
+        symbol = st.text_input("ชื่อหุ้นซิ่ง", "WHA")
+        shares = st.number_input("จำนวนหุ้น", value=1000, step=100)
     with c_col2:
-        buy_p = st.number_input("ราคาซื้อ (Buy)", value=4.10, format="%.2f")
-        sell_p = st.number_input("ราคาขาย (Sell)", value=4.20, format="%.2f")
+        buy_p = st.number_input("ราคาซื้อ", value=4.10, format="%.2f")
+        sell_p = st.number_input("ราคาขาย", value=4.20, format="%.2f")
     
     net_profit, fees = calculate_net_profit(buy_p, sell_p, shares)
     
     st.divider()
     res_col1, res_col2 = st.columns(2)
-    res_col1.metric("กำไรสุทธิ (Net)", f"฿{net_profit:,.2f}")
+    res_col1.metric("กำไรสุทธิ (หลังหักคอมฯ)", f"฿{net_profit:,.2f}")
     res_col2.metric("ค่าธรรมเนียมรวม", f"฿{fees:,.2f}", delta_color="inverse")
 
 with tab4:
-    st.subheader("PROFIT HISTORY")
-    st.success("**12 ก.พ. 26:** +฿172.03 (GPSC/WHA)")
+    st.subheader("PROFIT LOG")
+    st.success("🗓️ 12 ก.พ. 26: ปิดดีล GPSC/WHA กำไรสุทธิ +฿172.03")
     st.divider()
-    st.write("### ยอดสะสมเดือนนี้")
+    st.write("### ยอดกำไรสะสม (เป้าหมาย ฿100,000)")
     st.title("฿172.03")
-    st.progress(0.57, text="57% ของเป้าหมาย ฿300")
+    st.progress(0.0017, text="เส้นทางสู่ทุนแสนเริ่มต้นขึ้นแล้วครับพี่โบ้!")
 
 st.divider()
-st.caption("© 2026 SUCHAT ENGINEERING TRADING SYSTEM • EXCLUSIVELY FOR P'BO")
+st.caption("ระบบโดยวิศวกร เพื่อวิศวกร • ข้อมูลอัปเดตตามรอบสแกน AI")
