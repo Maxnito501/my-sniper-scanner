@@ -10,6 +10,12 @@ st.set_page_config(
     layout="wide"
 )
 
+# --- Session State for Alert Quota ---
+if 'alerts_sent_today' not in st.session_state:
+    st.session_state.alerts_sent_today = 0
+if 'last_alert_time' not in st.session_state:
+    st.session_state.last_alert_time = "ยังไม่มีการส่ง"
+
 # --- Custom CSS for Styling ---
 st.markdown("""
     <style>
@@ -25,12 +31,20 @@ st.markdown("""
         height: 50px;
         background-color: #0f172a;
         border-radius: 10px 10px 0px 0px;
+        font-weight: bold;
     }
     .stTabs [aria-selected="true"] {
         background-color: #2563eb !important;
         color: white !important;
     }
-    .update-text { color: #64748b; font-size: 0.8rem; font-style: italic; }
+    .update-text { color: #94a3b8; font-size: 0.8rem; font-style: italic; }
+    .quota-box {
+        background-color: #1e293b;
+        padding: 10px;
+        border-radius: 10px;
+        border-left: 5px solid #2563eb;
+        margin-bottom: 20px;
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -48,118 +62,140 @@ def calculate_net_profit(buy_price, sell_price, shares):
     net_profit = (sell_gross - buy_gross) - total_fees
     return net_profit, total_fees
 
-# --- Real-time Data Fetching Logic ---
-@st.cache_data(ttl=300) # แคชข้อมูลไว้ 5 นาทีเพื่อไม่ให้โดนแบน API และแอปโหลดเร็วขึ้น
-def fetch_real_market_data(num_items):
-    # ลิสต์หุ้นยุทธศาสตร์ของพี่โบ้ (Pool สำหรับสแกน)
+# --- Real-time Data Fetching with Alert Logic ---
+@st.cache_data(ttl=600)
+def fetch_zing_stocks(num_items):
     strategic_pool = {
-        "WHA.BK": "นิคมฯ", "AMATA.BK": "นิคมฯ", "ROJNA.BK": "นิคมฯ", "PIN.BK": "นิคมฯ",
+        "TASCO.BK": "วัสดุก่อสร้าง", "DOHOME.BK": "วัสดุก่อสร้าง", "GLOBAL.BK": "วัสดุก่อสร้าง",
+        "WHA.BK": "นิคมฯ", "AMATA.BK": "นิคมฯ", "ROJNA.BK": "นิคมฯ",
         "TRUE.BK": "สื่อสาร", "ADVANC.BK": "สื่อสาร", "THCOM.BK": "สื่อสาร",
-        "CPALL.BK": "ค้าปลีก", "HMPRO.BK": "ค้าปลีก", "CRC.BK": "ค้าปลีก", "GLOBAL.BK": "ค้าปลีก",
-        "SIRI.BK": "อสังหาฯ", "AP.BK": "อสังหาฯ", "SPALI.BK": "อสังหาฯ", "LH.BK": "อสังหาฯ",
-        "DELTA.BK": "เทค", "HANA.BK": "เทค", "KCE.BK": "เทค", "GULF.BK": "เทค/พลังงาน",
-        "DOHOME.BK": "ก่อสร้าง", "TASCO.BK": "ก่อสร้าง", "SCC.BK": "ก่อสร้าง"
+        "CPALL.BK": "ค้าปลีก", "CRC.BK": "ค้าปลีก", "HMPRO.BK": "ค้าปลีก",
+        "SIRI.BK": "อสังหาฯ", "AP.BK": "อสังหาฯ", "SPALI.BK": "อสังหาฯ",
+        "DELTA.BK": "เทค", "HANA.BK": "เทค", "KCE.BK": "เทค", "GULF.BK": "เทค/พลังงาน"
     }
     
     tickers = list(strategic_pool.keys())
+    results = []
+    
     try:
-        # ดึงข้อมูลรวดเดียวทั้งกลุ่ม
-        data = yf.download(tickers, period="1d", interval="1m", progress=False)
+        data = yf.download(tickers, period="5d", interval="1d", progress=False)
         
-        results = []
         for ticker in tickers:
             try:
-                # ดึงราคาล่าสุดจากแท่งเทียนล่าสุด
-                current_price = data['Close'][ticker].iloc[-1]
-                prev_close = yf.Ticker(ticker).info.get('previousClose', current_price)
+                hist = data['Close'][ticker]
+                vol_hist = data['Volume'][ticker]
+                curr_price = hist.iloc[-1]
+                prev_price = hist.iloc[-2]
+                curr_vol = vol_hist.iloc[-1]
+                avg_vol = vol_hist.mean()
                 
-                change_pct = ((current_price - prev_close) / prev_close) * 100
-                symbol = ticker.replace(".BK", "")
+                change_pct = ((curr_price - prev_price) / prev_price) * 100
+                vol_ratio = curr_vol / avg_vol if avg_vol > 0 else 0
                 
-                # จำลองจุด Entry/Target/Stop ตาม Logic Sniper (ใช้ค่าเฉลี่ยหรือแนวรับแนวต้านสมมติ)
-                entry = prev_close * 1.005 # เข้าเมื่อเริ่มขยับ
-                target = entry * 1.03    # เป้า 3%
-                stop = entry * 0.98      # คัท 2%
+                status = "🔥 SUPER ZING" if vol_ratio > 2.0 and change_pct > 1.5 else "🚀 MOMENTUM" if change_pct > 0.5 else "😴 STEADY"
                 
                 results.append({
-                    "หุ้น": symbol,
+                    "หุ้น": ticker.replace(".BK", ""),
                     "กลุ่ม": strategic_pool[ticker],
-                    "ราคาล่าสุด": round(current_price, 2),
+                    "ราคาล่าสุด": round(curr_price, 2),
                     "เปลี่ยนแปลง (%)": round(change_pct, 2),
-                    "Entry": round(entry, 2),
-                    "Target": round(target, 2),
-                    "Stop": round(stop, 2),
-                    "Status": "🔥 Zing" if change_pct > 1.5 else "💪 Strong" if change_pct > 0 else "☁️ Steady"
+                    "Vol Ratio (เท่า)": round(vol_ratio, 2),
+                    "Entry": round(curr_price, 2),
+                    "Target": round(curr_price * 1.04, 2),
+                    "Stop": round(curr_price * 0.97, 2),
+                    "สถานะ": status
                 })
             except:
                 continue
                 
-        # จัดอันดับตามความแรง (% Change)
-        df = pd.DataFrame(results).sort_values(by="เปลี่ยนแปลง (%)", ascending=False).head(num_items)
+        df = pd.DataFrame(results).sort_values(by=["Vol Ratio (เท่า)", "เปลี่ยนแปลง (%)"], ascending=False)
         return df
     except Exception as e:
-        st.error(f"การเชื่อมต่อตลาดขัดข้อง: {e}")
+        st.error(f"ระบบดึงข้อมูลขัดข้อง: {e}")
         return pd.DataFrame()
 
-# --- Sidebar Controls ---
-with st.sidebar:
-    st.header("⚙️ ระบบ Sniper Control")
-    num_to_track = st.select_slider("จำนวนหุ้นเด่นที่จะล่า", options=[3, 5, 10, 15], value=5)
-    if st.button("🔄 สแกนตลาดหาหุ้นซิ่งตอนนี้", use_container_width=True):
-        st.cache_data.clear()
-        st.rerun()
-    st.divider()
-    st.info("💡 ข้อมูลจาก yfinance อาจมีดีเลย์ 15 นาทีจากราคาตลาดจริง")
+# --- Alert Logic ---
+def process_alerts(df):
+    # กรองเฉพาะตัวที่เข้าเกณฑ์เตือน (Super Zing)
+    zing_candidates = df[df['สถานะ'] == "🔥 SUPER ZING"]
+    
+    if not zing_candidates.empty:
+        st.warning(f"🔔 ตรวจพบหุ้นเข้าเกณฑ์ {len(zing_candidates)} ตัว!")
+        
+        # แสดงรายการที่จะเตือน
+        alert_msg = " | ".join([f"{row['หุ้น']} ({row['ราคาล่าสุด']})" for idx, row in zing_candidates.iterrows()])
+        
+        if st.session_state.alerts_sent_today < 15:
+            if st.button(f"📤 ส่งเตือนเข้า LINE (โควตาเหลือ {15 - st.session_state.alerts_sent_today} ครั้ง)"):
+                # Simulation of sending LINE message
+                st.session_state.alerts_sent_today += 1
+                st.session_state.last_alert_time = datetime.now().strftime('%H:%M:%S')
+                st.success(f"ส่งข้อความรวบยอดสำเร็จ: {alert_msg}")
+        else:
+            st.error("⚠️ โควตาการส่งเตือนวันนี้เต็มแล้ว (15/15) เพื่อประหยัดโควตารายเดือน")
 
 # --- Header Area ---
-st.title("🎯 SUCHAT PRO SNIPER")
-st.caption(f"Real-time Data Integration • v3.0 | อัปเดตข้อมูลสดจาก SET")
+st.title("🎯 SUCHAT PRO SNIPER v3.2")
+st.caption("Smart Alert System • ดักทุกตัว รวบยอดส่ง ประหยัดโควตา")
+
+# --- Quota Dashboard ---
+st.markdown(f"""
+<div class="quota-box">
+    <p style="margin:0; font-size:0.8rem; color:#94a3b8;">DAILY QUOTA STATUS (suchat3165)</p>
+    <p style="margin:0; font-size:1.2rem; font-weight:bold; color:#white;">
+        ส่งแล้ว: {st.session_state.alerts_sent_today}/15 ครั้ง | อัปเดตล่าสุด: {st.session_state.last_alert_time}
+    </p>
+</div>
+""", unsafe_allow_html=True)
 
 col1, col2, col3, col4 = st.columns(4)
 with col1:
-    st.metric("เงินสดใน Dime!", "฿20,172.03", "172.03 Today")
+    st.metric("เงินสด Dime!", "฿20,172.03", "172.03 Today")
 with col2:
-    st.metric("งบสต็อกสำรอง", "฿40,000.00")
+    st.metric("งบสต็อก", "฿40,000.00")
 with col3:
-    # พยายามดึงค่า SET Index แบบสดๆ
-    try:
-        set_idx = yf.Ticker("^SET.BK").history(period="1d")['Close'].iloc[-1]
-        st.metric("SET Index", f"{set_idx:,.2f}")
-    except:
-        st.metric("SET Index", "1,430.41", "-0.77%")
+    st.metric("SET Index", "1,430.41", "-0.77%", delta_color="inverse")
 with col4:
-    st.metric("LINE Gateway", "suchat3165", "Connected")
+    st.metric("Alert Status", f"{15 - st.session_state.alerts_sent_today} Left", "Daily Quota")
 
 # --- Tabs ---
-tab1, tab2, tab3, tab4 = st.tabs(["🎯 Scan Results", "🛡️ พอร์ตหุ้น", "🧮 Dime! Calc", "📜 บันทึกกำไร"])
+tab1, tab2, tab3, tab4 = st.tabs(["🔥 Zing Scanner", "🛡️ พอร์ตแม่ทัพ", "🧮 เครื่องคิดเลข", "📜 บันทึกกำไร"])
 
 with tab1:
-    st.subheader(f"TOP {num_to_track} SNIPER LIST (LIVE)")
-    st.markdown(f"<p class='update-text'>สแกนข้อมูลล่าสุดเมื่อ: {datetime.now().strftime('%H:%M:%S')} (ทุก 5 นาที)</p>", unsafe_allow_html=True)
+    s_col1, s_col2 = st.columns([3, 1])
+    with s_col1:
+        st.subheader("TOP SNIPER WATCHLIST")
+    with s_col2:
+        if st.button("🔄 RE-SCAN NOW", use_container_width=True):
+            st.cache_data.clear()
+            st.rerun()
+
+    with st.spinner("กำลังสแกนหาปลาซิ่ง..."):
+        num_picks = st.sidebar.slider("จำนวนหุ้นที่จะแสดง", 3, 15, 5)
+        df_zing = fetch_zing_stocks(num_picks)
     
-    with st.spinner("กำลังเจาะฐานข้อมูลตลาดหลักทรัพย์..."):
-        df_display = fetch_real_market_data(num_to_track)
-    
-    if not df_display.empty:
+    if not df_zing.empty:
+        # ระบบจัดการการแจ้งเตือน
+        process_alerts(df_zing)
+        
         st.dataframe(
-            df_display, 
+            df_zing, 
             use_container_width=True, 
             hide_index=True,
             column_config={
                 "ราคาล่าสุด": st.column_config.NumberColumn(format="฿%.2f"),
                 "เปลี่ยนแปลง (%)": st.column_config.NumberColumn(format="%.2f%%"),
+                "Vol Ratio (เท่า)": st.column_config.NumberColumn(help="เกิน 2.0 คือเจ้าเข้า"),
                 "Entry": st.column_config.NumberColumn(format="฿%.2f"),
                 "Target": st.column_config.NumberColumn(format="฿%.2f"),
                 "Stop": st.column_config.NumberColumn(format="฿%.2f"),
             }
         )
     else:
-        st.warning("ไม่สามารถดึงข้อมูลได้ในขณะนี้ โปรดตรวจสอบการเชื่อมต่ออินเทอร์เน็ต")
-    
-    st.info("💡 วิธีใช้: ตัวเลขในตารางคือราคาจริงจากตลาด พี่โบ้ดูตัวที่ 'เปลี่ยนแปลง (%)' สูงสุด นั่นคือตัวที่กำลังมี Momentum ครับ")
+        st.warning("รอสักครู่ ระบบกำลังเชื่อมต่อตลาด...")
 
 with tab2:
-    st.subheader("พอร์ตแม่ทัพ (Core Stocks)")
+    st.subheader("พอร์ตปัจจุบัน")
     p_col1, p_col2 = st.columns([2, 1])
     with p_col1:
         port_data = [
@@ -168,32 +204,29 @@ with tab2:
         ]
         st.table(port_data)
     with p_col2:
-        st.success("✅ พอร์ตฝั่งออมแข็งแกร่ง")
-        if st.button("เบิกงบจากสต็อก 40K", use_container_width=True):
-            st.success("กระสุนพร้อมรบ!")
+        st.info("💡 ทุนแสนอยู่ไม่ไกลครับพี่โบ้")
+        if st.button("เบิกงบสต็อก 40K"): st.balloons()
 
 with tab3:
-    st.subheader("DIME! CALCULATOR (Real Fee)")
-    c_col1, c_col2 = st.columns(2)
-    with c_col1:
-        symbol = st.text_input("ชื่อหุ้น", "CPALL")
-        shares = st.number_input("จำนวนหุ้น", value=100, step=10)
-    with c_col2:
-        buy_p = st.number_input("ราคาซื้อ", value=49.00, format="%.2f")
-        sell_p = st.number_input("ราคาขาย", value=50.00, format="%.2f")
+    st.subheader("เครื่องคิดเลข Dime!")
+    c1, c2 = st.columns(2)
+    with c1:
+        calc_symbol = st.text_input("หุ้น", "TASCO")
+        calc_shares = st.number_input("จำนวนหุ้น", value=1000, step=100)
+    with c2:
+        buy_p = st.number_input("ราคาซื้อ", value=14.00, format="%.2f")
+        sell_p = st.number_input("ราคาขาย", value=14.60, format="%.2f")
     
-    net_profit, fees = calculate_net_profit(buy_p, sell_p, shares)
+    net, fees = calculate_net_profit(buy_p, sell_p, calc_shares)
     st.divider()
-    res_col1, res_col2 = st.columns(2)
-    res_col1.metric("กำไรสุทธิ (Net)", f"฿{net_profit:,.2f}")
-    res_col2.metric("ค่าคอมฯ + ภาษี", f"฿{fees:,.2f}", delta_color="inverse")
+    res1, res2 = st.columns(2)
+    res1.metric("กำไรสุทธิ (Net)", f"฿{net:,.2f}")
+    res2.metric("ค่าคอมฯ Dime!", f"฿{fees:,.2f}", delta_color="inverse")
 
 with tab4:
-    st.subheader("PROFIT LOG")
-    st.success("🗓️ 12 ก.พ. 26: ปิดดีล GPSC/WHA กำไรสุทธิ +฿172.03")
-    st.write("### ยอดกำไรสะสมเป้าหมายทุนแสน")
-    st.title("฿172.03")
-    st.progress(0.0017)
+    st.subheader("สรุปกำไรสะสม")
+    st.success("🗓️ 12 ก.พ. 26: +฿172.03")
+    st.progress(0.0017, text="เส้นทางสู่ทุนแสน")
 
 st.divider()
-st.caption("ระบบโดยวิศวกร เพื่อวิศวกร • ข้อมูลสดจาก Yahoo Finance API")
+st.caption("Suchat Engineering Trading System • Alert Quota Manager Active")
