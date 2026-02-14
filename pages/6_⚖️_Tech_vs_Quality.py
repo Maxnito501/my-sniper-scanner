@@ -1,160 +1,183 @@
 import streamlit as st
-import yfinance as yf
 import pandas as pd
-import plotly.graph_objects as go
+import yfinance as yf
+from datetime import datetime
 
-# --- 1. ตั้งค่าหน้าเว็บ ---
-st.set_page_config(page_title="Tech vs Quality Balancer", page_icon="⚖️", layout="wide")
+# --- Configuration ---
+st.set_page_config(
+    page_title="Fund Allocator: SCB vs KKP",
+    page_icon="⚖️",
+    layout="wide"
+)
 
-st.title("⚖️ Tech vs Quality Balancer: จัดทัพ EDCA")
+# --- Custom Styling ---
 st.markdown("""
-**เครื่องมือชั่งน้ำหนักการลงทุน: เปรียบเทียบความน่าสนใจระหว่าง 'หุ้นชิป (Growth)' และ 'หุ้นแกร่ง (Quality)'**
-* 🤖 **AI Suggestion:** แนะนำสัดส่วนการลงทุน (Weight) ตามค่า RSI ปัจจุบัน
-* 📉 **RSI Compare:** ดูกราฟเทียบกันชัดๆ ว่าตัวไหนถูกกว่า
-""")
-st.write("---")
+    <style>
+    .main { background-color: #020617; }
+    .stMetric {
+        background-color: #0f172a;
+        padding: 15px;
+        border-radius: 12px;
+        border: 1px solid #1e293b;
+    }
+    .fund-card {
+        background-color: #1e293b;
+        padding: 20px;
+        border-radius: 15px;
+        border-top: 5px solid #2563eb;
+        margin-bottom: 10px;
+    }
+    .highlight-kkp { border-top: 5px solid #8b5cf6; }
+    .highlight-scb { border-top: 5px solid #2563eb; }
+    .market-status {
+        font-size: 0.8rem;
+        color: #94a3b8;
+        font-style: italic;
+        margin-bottom: 20px;
+    }
+    </style>
+    """, unsafe_allow_html=True)
 
-# --- 2. Sidebar Input ---
-st.sidebar.header("💰 เงินกระสุน (Budget)")
-budget = st.sidebar.number_input("เงินที่จะลงทุนรอบนี้ (บาท)", value=4000, step=500)
-st.sidebar.caption("ระบบจะคำนวณแบ่งเงินให้ตามความน่าสนใจ")
-
-# --- 3. ฟังก์ชันคำนวณ ---
-@st.cache_data(ttl=60) # Cache 1 นาที
-def get_pair_data():
+# --- Real-time Market Data Logic ---
+@st.cache_data(ttl=300)
+def get_market_sentiment(ticker):
     try:
-        # ดึงข้อมูล 2 ตัวพร้อมกัน (SMH = Semi, QUAL = Quality)
-        df = yf.download("SMH QUAL", period="6mo", interval="1d", progress=False)
-        
-        # แก้ปัญหา MultiIndex
-        if isinstance(df.columns, pd.MultiIndex):
-            close_df = df['Close']
-        else:
-            close_df = df['Close'] # Fallback
-            
-        return close_df
-    except: return None
+        data = yf.Ticker(ticker)
+        hist = data.history(period="1d", interval="5m")
+        if not hist.empty:
+            curr_price = hist['Close'].iloc[-1]
+            prev_close = data.info.get('previousClose', curr_price)
+            change = ((curr_price - prev_close) / prev_close) * 100
+            return curr_price, change
+    except:
+        return None, 0
+    return None, 0
 
-def calculate_rsi(series, period=14):
-    delta = series.diff()
-    gain = (delta.where(delta > 0, 0)).ewm(alpha=1/14, adjust=False).mean()
-    loss = (-delta.where(delta < 0, 0)).ewm(alpha=1/14, adjust=False).mean()
-    rs = gain / loss
-    return 100 - (100 / (1 + rs))
+# --- Fund Database (Mapped with Real-time Tickers) ---
+fund_data = {
+    "S&P 500 (หุ้นสหรัฐฯ)": {
+        "ticker": "^GSPC",
+        "scb": {"name": "SCBRMS&P500", "focus": "ค่าธรรมเนียมต่ำมาก", "type": "Index Fund"},
+        "kkp": {"name": "KKP S&P500 SET-RMF", "focus": "ความประหยัดสูงสุด", "type": "Index Fund"},
+        "strategy": "เน้นถือยาวตามดัชนีเศรษฐกิจสหรัฐฯ"
+    },
+    "Nasdaq 100 (หุ้นเทคโนโลยี)": {
+        "ticker": "^NDX",
+        "scb": {"name": "SCBNDQ", "focus": "ดัชนีเทค Nasdaq", "type": "Index Fund"},
+        "kkp": {"name": "KKP NDQ100-H-RMF", "focus": "Hedged ค่าเงินเสถียร", "type": "Index Fund"},
+        "strategy": "เน้นเติบโตไปกับนวัตกรรมและ AI"
+    },
+    "Global Quality (หุ้นโลกผู้ชนะ)": {
+        "ticker": "QUAL",
+        "scb": {"name": "SCBGQUAL", "focus": "หุ้นคุณภาพพื้นฐานแกร่ง", "type": "Passive/Factor"},
+        "kkp": {"name": "KKP GNP RMF-UH", "focus": "Active (Capital Group) คัดผู้ชนะ", "type": "Active Fund"},
+        "strategy": "เน้นความผันผวนต่ำโดยผู้เชี่ยวชาญเลือกหุ้น"
+    },
+    "Tech & Semiconductor (เทคเฉพาะทาง)": {
+        "ticker": "SOXX",
+        "scb": {"name": "SCBSEMI", "focus": "เน้นกลุ่ม Chip", "type": "Sector Fund"},
+        "kkp": {"name": "KKP TECH-H-RMF", "focus": "เน้น Software และ AI Service", "type": "Sector Fund"},
+        "strategy": "เน้นโครงสร้างพื้นฐานของระบบ AI โลก"
+    }
+}
 
-# --- 4. Main Logic ---
-df = get_pair_data()
+# --- Header ---
+st.title("⚖️ Smart Fund Allocator (Real-time eDCA)")
+st.caption("ระบบวิเคราะห์จังหวะตลาดโลกเพื่อจัดสรร RMF (SCB vs KKP) สำหรับวิศวกรโบ้")
 
-if df is not None:
-    # คำนวณ RSI ล่าสุด
-    rsi_semi = calculate_rsi(df['SMH']).iloc[-1]
-    rsi_qual = calculate_rsi(df['QUAL']).iloc[-1]
+# --- Selection & Input ---
+with st.sidebar:
+    st.header("🎯 ยุทธศาสตร์การจัดสรร")
+    category = st.selectbox("เลือกกลุ่มสินทรัพย์", list(fund_data.keys()))
+    total_budget = st.number_input("งบประมาณลงทุนรอบนี้ (บาท)", min_value=0, value=10000, step=1000)
     
-    price_semi = df['SMH'].iloc[-1]
-    price_qual = df['QUAL'].iloc[-1]
-
-    # --- 5. Algorithm ถ่วงน้ำหนัก (The Brain) ---
-    weight_semi = 0
-    weight_qual = 0
-    advice = ""
-    color_box = "#f3f4f6"
-    text_color = "black"
-
-    # Case 1: แพงทั้งคู่ (RSI > 60) -> ไม่ซื้อ
-    if rsi_semi > 60 and rsi_qual > 60:
-        advice = "⛔ WAIT: แพงทั้งคู่! กำเงินสดรอ (Overbought)"
-        weight_semi = 0
-        weight_qual = 0
-        color_box = "#fee2e2" # แดงอ่อน
-        
-    # Case 2: ถูกทั้งคู่ (RSI < 40) -> จัดเต็ม
-    elif rsi_semi < 40 and rsi_qual < 40:
-        advice = "💎 DOUBLE DIP: ถูกทั้งคู่! แบ่งครึ่งหรือเน้นตัวที่ชอบ"
-        weight_semi = 50
-        weight_qual = 50
-        color_box = "#dcfce7" # เขียวอ่อน
-        
-    # Case 3: Semi ถูกกว่า (น่าสนกว่า)
-    elif rsi_semi < rsi_qual:
-        # ยิ่ง RSI Semi ต่ำ ยิ่งน่าเพิ่มน้ำหนัก
-        diff = rsi_qual - rsi_semi
-        if diff > 10: # ต่างกันเยอะ
-            weight_semi = 70
-            weight_qual = 30
-            advice = f"🚀 FOCUS SEMI: ชิปถูกกว่ามาก (Gap {diff:.1f}) -> เน้น Semi"
-        else: # ต่างกันนิดหน่อย
-            weight_semi = 60
-            weight_qual = 40
-            advice = f"⚖️ TILT SEMI: ชิปถูกกว่านิดหน่อย -> เพิ่มน้ำหนัก Semi"
-        color_box = "#e0f2fe" # ฟ้าอ่อน
-
-    # Case 4: Quality ถูกกว่า
-    else: # rsi_qual < rsi_semi
-        diff = rsi_semi - rsi_qual
-        if diff > 10:
-            weight_semi = 30
-            weight_qual = 70
-            advice = f"🛡️ FOCUS QUALITY: หุ้นแกร่งถูกกว่า (Gap {diff:.1f}) -> เน้น Quality"
-        else:
-            weight_semi = 40
-            weight_qual = 60
-            advice = f"⚖️ TILT QUALITY: หุ้นแกร่งถูกกว่านิดหน่อย -> เพิ่มน้ำหนัก Quality"
-        color_box = "#fff7ed" # ส้มอ่อน
-
-    # คำนวณเงิน
-    money_semi = budget * (weight_semi / 100)
-    money_qual = budget * (weight_qual / 100)
-
-    # --- 6. แสดงผล Dashboard ---
+    if st.button("🔄 อัปเดตราคาตลาดโลกสด"):
+        st.cache_data.clear()
+        st.rerun()
     
-    # กล่องสรุป
+    st.divider()
+    st.write("📈 **หลักการ eDCA คืนนี้:**")
+    st.info("ใช้ราคาดัชนีตลาดโลก (Ticker) เป็นตัวนำทาง NAV กองทุนไทยที่จะประกาศตอนเย็น")
+
+selected_asset = fund_data[category]
+market_price, market_change = get_market_sentiment(selected_asset['ticker'])
+
+# --- Market Sentiment Header ---
+st.markdown(f"<p class='market-status'>ดัชนีอ้างอิง: {selected_asset['ticker']} | อัปเดตล่าสุด: {datetime.now().strftime('%H:%M:%S')}</p>", unsafe_allow_html=True)
+
+m_col1, m_col2 = st.columns([1, 2])
+with m_col1:
+    if market_price:
+        st.metric(f"สถานะ {selected_asset['ticker']}", f"{market_price:,.2f}", f"{market_change:.2f}%")
+    else:
+        st.warning("รอตลาดเปิด/กำลังดึงข้อมูล...")
+
+with m_col2:
+    if market_change < -1.0:
+        st.error(f"⚠️ ตลาดลงหนัก ({market_change:.2f}%) จังหวะนี้ควรเน้นสะสมตัวที่ Underperform หรือ Active Fund")
+    elif market_change > 1.0:
+        st.success(f"🚀 ตลาดแรง ({market_change:.2f}%) พิจารณา DCA ตามวินัยในกองทุนดัชนี")
+    else:
+        st.info("📉 ตลาดแกว่งตัวแคบ เน้นจัดสรรตามสัดส่วนยุทธศาสตร์หลัก")
+
+st.divider()
+
+# --- Main Layout ---
+col_scb, col_kkp = st.columns(2)
+
+with col_scb:
+    st.markdown(f"""<div class="fund-card highlight-scb">
+        <h3 style='color:#60a5fa;'>💜 SCB AM</h3>
+        <p style='font-size:1.2rem; font-weight:bold;'>{selected_asset['scb']['name']}</p>
+        <p style='color:#94a3b8; font-size:0.9rem;'>{selected_asset['scb']['focus']}</p>
+        <p style='color:#cbd5e1;'>ประเภท: {selected_asset['scb']['type']}</p>
+    </div>""", unsafe_allow_html=True)
+    
+    # ออโต้แนะนำสัดส่วนเบื้องต้นตามสถานะตลาด
+    default_scb = 40 if market_change < -0.5 else 50
+    scb_weight = st.slider(f"สัดส่วนของ {selected_asset['scb']['name']} (%)", 0, 100, default_scb, key="scb_s")
+
+with col_kkp:
+    st.markdown(f"""<div class="fund-card highlight-kkp">
+        <h3 style='color:#a78bfa;'>🧡 KKP AM (Stronger Pick)</h3>
+        <p style='font-size:1.2rem; font-weight:bold;'>{selected_asset['kkp']['name']}</p>
+        <p style='color:#94a3b8; font-size:0.9rem;'>{selected_asset['kkp']['focus']}</p>
+        <p style='color:#cbd5e1;'>ประเภท: {selected_asset['kkp']['type']}</p>
+    </div>""", unsafe_allow_html=True)
+    
+    kkp_weight = 100 - scb_weight
+    st.write("") # Spacer
+    st.metric(f"สัดส่วนของ {selected_asset['kkp']['name']}", f"{kkp_weight}%")
+
+st.divider()
+
+# --- Allocation Result ---
+res_col1, res_col2, res_col3 = st.columns(3)
+
+scb_amount = total_budget * (scb_weight / 100)
+kkp_amount = total_budget * (kkp_weight / 100)
+
+with res_col1:
+    st.metric("เงินลงทุนฝั่ง SCB", f"฿{scb_amount:,.2f}")
+with res_col2:
+    st.metric("เงินลงทุนฝั่ง KKP", f"฿{kkp_amount:,.2f}", delta=f"{kkp_weight-50}% Weight" if kkp_weight!=50 else None)
+with res_col3:
     st.markdown(f"""
-    <div style="background-color: {color_box}; padding: 15px; border-radius: 10px; text-align: center; border: 1px solid #ccc;">
-        <h2 style="margin:0; color: {text_color};">🤖 {advice}</h2>
+    <div style='background-color:#0f172a; padding:15px; border-radius:10px; border:1px solid #334155;'>
+        <p style='margin:0; font-size:0.8rem; color:#94a3b8;'>STRATEGY NOTE</p>
+        <p style='margin:0; font-size:0.9rem; font-weight:bold;'>{selected_asset['strategy']}</p>
     </div>
     """, unsafe_allow_html=True)
-    
-    st.write("")
 
-    # การ์ดเปรียบเทียบ
-    c1, c2 = st.columns(2)
-    
-    with c1:
-        st.subheader("🚀 SCBSEMI (Semi-Conductor)")
-        st.caption("ตัวแทน: SMH (VanEck Semiconductor)")
-        st.metric("RSI (Momentum)", f"{rsi_semi:.1f}", delta=f"{rsi_semi-50:.1f} จากค่ากลาง", delta_color="inverse")
-        st.metric("แนะนำลงทุน", f"{money_semi:,.0f} บาท", f"สัดส่วน {weight_semi}%")
-        if weight_semi > 50: st.success("✅ ตัวเลือกหลักรอบนี้")
-        
-    with c2:
-        st.subheader("🛡️ SCBGQUAL (Global Quality)")
-        st.caption("ตัวแทน: QUAL (iShares MSCI USA Quality)")
-        st.metric("RSI (Momentum)", f"{rsi_qual:.1f}", delta=f"{rsi_qual-50:.1f} จากค่ากลาง", delta_color="inverse")
-        st.metric("แนะนำลงทุน", f"{money_qual:,.0f} บาท", f"สัดส่วน {weight_qual}%")
-        if weight_qual > 50: st.success("✅ ตัวเลือกหลักรอบนี้")
+# --- Summary & Action ---
+st.write("### 📝 แผนการทำ eDCA วันนี้")
+st.success(f"สรุปยอดลงทุน: **SCB ฿{scb_amount:,.2f}** | **KKP ฿{kkp_amount:,.2f}**")
 
-    st.write("---")
+# อัลกอริทึมแนะนำการตัดสินใจ
+if category == "Global Quality (หุ้นโลกผู้ชนะ)" and market_change < -0.5:
+    st.warning(f"💡 ตลาดพักตัว: แนะนำเน้นไปที่ **KKP GNP RMF-UH** เพราะเป็น Active Fund ทีมงาน Capital Group จะช่วยคัดหุ้นที่แข็งแกร่งในช่วงขาลงได้ดีกว่า")
+elif kkp_weight > 50:
+    st.info(f"💡 คุณกำลังให้น้ำหนักกับ **KKP** มากขึ้น เพื่อใช้ประโยชน์จาก {selected_asset['kkp']['focus']}")
 
-    # กราฟ RSI เปรียบเทียบ
-    st.subheader("📉 กราฟ RSI: ใครถูกกว่ากัน?")
-    
-    # สร้างข้อมูล RSI ย้อนหลัง
-    rsi_semi_series = calculate_rsi(df['SMH'])
-    rsi_qual_series = calculate_rsi(df['QUAL'])
-    
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(x=df.index, y=rsi_semi_series, name='SCBSEMI (SMH)', line=dict(color='red', width=2)))
-    fig.add_trace(go.Scatter(x=df.index, y=rsi_qual_series, name='SCBGQUAL (QUAL)', line=dict(color='blue', width=2)))
-    
-    # เส้นโซน
-    fig.add_hline(y=70, line_dash="dot", line_color="gray", annotation_text="Overbought (แพง)")
-    fig.add_hline(y=30, line_dash="dot", line_color="green", annotation_text="Oversold (ถูก)")
-    fig.add_hrect(y0=30, y1=70, line_width=0, fillcolor="gray", opacity=0.1)
-    
-    fig.update_layout(height=400, hovermode="x unified", yaxis_title="RSI Value")
-    st.plotly_chart(fig, use_container_width=True)
-    
-    st.info("💡 **วิธีดู:** เส้นไหนอยู่ต่ำกว่า = ถูกกว่า (น่าสนใจกว่า) | ถ้าอยู่ต่ำทั้งคู่ = น่าสนใจที่สุด")
-
-else:
-    st.error("ไม่สามารถดึงข้อมูลเปรียบเทียบได้")
+st.divider()
+st.caption("ระบบวางแผนยุทธศาสตร์กองทุน • ข้อมูล Real-time อ้างอิงจากตลาดโลก (Yahoo Finance API)")
