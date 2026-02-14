@@ -3,199 +3,236 @@ import pandas as pd
 import yfinance as yf
 from datetime import datetime
 
-# --- Configuration ---
+# --- การตั้งค่าหน้ากระดาษ ---
 st.set_page_config(
-    page_title="Fund Sniper: RMF Battle (SCB vs KKP)",
+    page_title="Fund Sniper: SCB vs KKP Decision",
     page_icon="⚖️",
     layout="wide"
 )
 
-# --- Custom Styling (Professional Light Theme) ---
+# --- ปรับแต่ง UI ให้ดูพรีเมียมและสะอาดตา (Light Theme) ---
 st.markdown("""
     <style>
-    .stApp { background-color: #f8fafc; }
+    /* พื้นหลังสีอ่อนสว่าง */
+    .stApp {
+        background-color: #f8fafc;
+    }
+    
+    /* กล่อง Metric */
     div[data-testid="stMetric"] {
         background-color: #ffffff;
-        padding: 15px;
-        border-radius: 12px;
+        padding: 20px;
+        border-radius: 16px;
         box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
         border: 1px solid #e2e8f0;
     }
-    .fund-card {
+
+    /* การ์ดตัดสินใจรายคู่ */
+    .decision-card {
         background-color: #ffffff;
-        padding: 20px;
-        border-radius: 15px;
-        margin-bottom: 10px;
+        padding: 25px;
+        border-radius: 20px;
+        margin-bottom: 20px;
         border: 1px solid #e2e8f0;
-        box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1);
+        box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1);
+        transition: transform 0.2s;
     }
-    .scb-line { border-left: 6px solid #6366f1; }
-    .kkp-line { border-left: 6px solid #f59e0b; }
-    h1, h2, h3 { color: #0f172a !important; font-family: 'Kanit', sans-serif; }
-    .stAlert { border-radius: 12px; }
+    .decision-card:hover {
+        transform: translateY(-2px);
+    }
+
+    /* แถบสีระบุค่ายกองทุน */
+    .scb-highlight { border-left: 10px solid #6366f1; }
+    .kkp-highlight { border-left: 10px solid #f59e0b; }
+
+    /* หัวข้อภาษาไทย */
+    h1, h2, h3, h4 {
+        color: #0f172a !important;
+        font-family: 'Kanit', sans-serif;
+    }
+
+    /* กล่องยุทธศาสตร์ */
     .strategy-note {
         background-color: #f1f5f9;
         padding: 15px;
         border-radius: 12px;
         border-left: 5px solid #334155;
-        font-size: 0.9rem;
+        font-size: 0.95rem;
     }
     </style>
     """, unsafe_allow_html=True)
 
-# --- RSI Calculation Logic (Protected for Real-time) ---
+# --- ฟังก์ชันคำนวณ RSI จากข้อมูลจริง ---
 def get_live_rsi(ticker):
     try:
+        # ดึงข้อมูลย้อนหลัง 1 เดือน
         data = yf.download(ticker, period="1mo", interval="1d", progress=False)
         if data.empty: return None, 0
-        close = data['Close'].iloc[:, 0] if isinstance(data['Close'], pd.DataFrame) else data['Close']
+        
+        # ปรับรูปแบบข้อมูลให้เป็น Series ตัวเลขตัวเดียว
+        if isinstance(data['Close'], pd.DataFrame):
+            close = data['Close'].iloc[:, 0]
+        else:
+            close = data['Close']
+            
         delta = close.diff()
         gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
         loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+        
         rs = gain / loss
-        rsi = 100 - (100 / (1 + rs))
-        change = ((close.iloc[-1] - close.iloc[-2]) / close.iloc[-2]) * 100
-        return round(float(rsi.iloc[-1]), 2), round(float(change), 2)
+        rsi_series = 100 - (100 / (1 + rs))
+        
+        # ดึงค่าล่าสุด
+        rsi_val = float(rsi_series.iloc[-1])
+        curr_p = float(close.iloc[-1])
+        prev_p = float(close.iloc[-2])
+        change = ((curr_p - prev_p) / prev_p) * 100
+        
+        if pd.isna(rsi_val): return None, 0
+        return round(rsi_val, 2), round(change, 2)
     except:
         return None, 0
 
-# --- Comprehensive Fund Database (RMF Selection) ---
-fund_db = {
-    "S&P 500 (ตลาดสหรัฐฯ)": {
+# --- ยุทธศาสตร์การตัดสินใจตามค่า RSI ---
+def get_battle_decision(rsi):
+    if rsi is None: return 50, "⚖️ รอข้อมูลตลาด"
+    
+    # เกณฑ์การตัดสินใจแบบ eDCA
+    if rsi < 35:
+        return 100, "🔥 ช้อนหนัก (KKP Focused)"
+    elif rsi < 45:
+        return 80, "📈 ทยอยเก็บ (KKP Advantage)"
+    elif rsi > 65:
+        return 0, "🛡️ หมอบก่อน (Overbought)"
+    elif rsi > 55:
+        return 20, "⚠️ ชะลอการซื้อ"
+    else:
+        return 50, "⚖️ DCA ปกติ (SCB Balanced)"
+
+# --- ฐานข้อมูลกองทุน 4 คู่ยุทธศาสตร์ของพี่โบ้ ---
+strategic_pairs = {
+    "S&P 500 (ตลาดหุ้นสหรัฐฯ)": {
         "ticker": "^GSPC",
         "scb": "SCBRMS&P500",
         "kkp": "KKP S&P500 SET-RMF",
-        "desc": "หุ้นใหญ่สหรัฐฯ 500 ตัว (Core Portfolio)"
+        "scb_note": "เน้นค่าธรรมเนียมต่ำที่สุดในไทย",
+        "kkp_note": "ซื้อขายสะดวกผ่าน Dime! เริ่ม 1 บาท"
     },
     "Nasdaq 100 (หุ้นเทคโนโลยี)": {
         "ticker": "^NDX",
-        "scb": "SCBNDQRMF",
+        "scb": "SCBNDQ",
         "kkp": "KKP NDQ100-H-RMF",
-        "desc": "หุ้นนวัตกรรมและเทคฯ ระดับโลก"
+        "scb_note": "Unhedged (ลุ้นค่าเงินดอลลาร์)",
+        "kkp_note": "Hedged (ป้องกันความเสี่ยงค่าเงิน)"
     },
-    "Global Quality (หุ้นโลกผู้ชนะ)": {
+    "Global Quality (หุ้นโลกคุณภาพ)": {
         "ticker": "QUAL",
-        "scb": "SCBGQUAL-RMF",
+        "scb": "SCBGQUAL",
         "kkp": "KKP GNP RMF-UH",
-        "desc": "คัดหุ้นคุณภาพพื้นฐานแกร่งทั่วโลก"
+        "scb_note": "Passive Quality ดัชนีระดับโลก",
+        "kkp_note": "Active (Capital Group) คัดหุ้นผู้ชนะ"
     },
     "Semiconductor (ชิป & AI)": {
         "ticker": "SOXX",
-        "scb": "SCBSEMI-RMF",
+        "scb": "SCBSEMI",
         "kkp": "KKP TECH-H-RMF",
-        "desc": "กลุ่มชิปประมวลผลและ Software AI"
-    },
-    "China H-Shares (หุ้นจีน)": {
-        "ticker": "ASHR",
-        "scb": "SCBCE-RMF",
-        "kkp": "KKP CHINA-H-RMF",
-        "desc": "หุ้นจีนแผ่นดินใหญ่ (Value Play)"
-    },
-    "Vietnam (หุ้นเวียดนาม)": {
-        "ticker": "VNM",
-        "scb": "SCBVIET-RMF",
-        "kkp": "KKP VIETNAM-H-RMF",
-        "desc": "หุ้นเวียดนาม ตลาดเกิดใหม่ศักยภาพสูง"
-    },
-    "Health Care (หุ้นสุขภาพ)": {
-        "ticker": "XLV",
-        "scb": "SCBGH-RMF",
-        "kkp": "KKP GHC-RMF",
-        "desc": "กลุ่มการแพทย์และสุขภาพ (Defensive)"
-    },
-    "Gold (ทองคำ)": {
-        "ticker": "GC=F",
-        "scb": "SCBGOLD-RMF",
-        "kkp": "KKP GOLD-H-RMF",
-        "desc": "สินทรัพย์ปลอดภัย ป้องกันความเสี่ยง"
-    },
-    "SET 50 (หุ้นไทย)": {
-        "ticker": "^SET50.BK",
-        "scb": "SCBSET50-RMF",
-        "kkp": "KKP SET50-RMF",
-        "desc": "หุ้นใหญ่ 50 ตัวของประเทศไทย"
+        "scb_note": "เน้นกลุ่มผู้ผลิต Chip โดยตรง",
+        "kkp_note": "กระจายตัวในกลุ่ม AI Service & Software"
     }
 }
 
-# --- Header ---
-st.title("⚖️ Fund Sniper: RMF Battle Matrix")
-st.caption(f"ระบบเปรียบเทียบกองทุน RMF (SCB vs KKP) ครบทุกกลุ่ม | อัปเดตตลาดโลก: {datetime.now().strftime('%H:%M:%S')}")
+# --- ส่วนหัวของแอป ---
+st.title("🎯 Fund Sniper: SCB vs KKP Decision")
+st.markdown("### ยุทธศาสตร์ช้อนกองทุน RMF 4 คู่หลัก")
+st.caption(f"ข้อมูล Real-time RSI อัปเดตเมื่อ: {datetime.now().strftime('%H:%M:%S')}")
 
-# --- Global Market Scanner Table ---
-st.subheader("📊 ตารางสแกนจังหวะเข้าช้อน (RSI 9 กลุ่ม)")
+# --- ตารางสรุปภาพรวม (Summary Matrix) ---
 with st.spinner("กำลังเจาะข้อมูลตลาดโลก..."):
-    summary_data = []
-    for name, info in fund_db.items():
+    summary_list = []
+    for name, info in strategic_pairs.items():
         rsi, chg = get_live_rsi(info['ticker'])
-        # AI Logic for Suggestion
-        if rsi and rsi < 35: action = "🔥 ช้อนหนัก (Strong Buy)"
-        elif rsi and rsi < 45: action = "📈 ทยอยเก็บ"
-        elif rsi and rsi > 65: action = "🛡️ พักเงิน (Wait)"
-        else: action = "⚖️ DCA ปกติ"
-        
-        summary_data.append({
+        weight, action = get_battle_decision(rsi)
+        summary_list.append({
             "กลุ่มสินทรัพย์": name,
-            "RSI (14)": rsi if rsi else "N/A",
+            "RSI (14 วัน)": rsi if rsi else "N/A",
             "Change (%)": f"{chg:+.2f}%",
-            "คำแนะนำ AI": action,
-            "ค่ายที่โดดเด่น": "เน้น KKP" if rsi and rsi < 45 else "เน้น SCB"
+            "จังหวะการลงทุน": action,
+            "น้ำหนักแนะนำ (%)": f"{weight}%"
         })
-    st.dataframe(pd.DataFrame(summary_data), use_container_width=True, hide_index=True)
+    st.dataframe(pd.DataFrame(summary_list), use_container_width=True, hide_index=True)
 
 st.divider()
 
-# --- Detailed Analysis Zone ---
-st.subheader("🎯 เจาะลึกรายตัวและจัดสรรงบ eDCA")
-col_sel, col_bud = st.columns([2, 1])
+# --- รายละเอียดการตัดสินใจรายคู่ ---
+st.subheader("🔍 วิเคราะห์เจาะลึกรายคู่ (Decision Matrix)")
 
-with col_sel:
-    selected_pair = st.selectbox("เลือกกองทุนที่จะลงเงินรอบนี้", list(fund_db.keys()))
-with col_bud:
-    budget = st.number_input("งบประมาณ (บาท)", value=10000, step=1000)
-
-info = fund_db[selected_pair]
-rsi_val, _ = get_live_rsi(info['ticker'])
-
-# AI Weight Suggestion
-default_kkp = 100 if rsi_val and rsi_val < 35 else 80 if rsi_val and rsi_val < 45 else 50 if rsi_val and rsi_val < 60 else 0
-
-col_cards, col_res = st.columns([2, 1])
-
-with col_cards:
-    c1, c2 = st.columns(2)
-    with c1:
-        st.markdown(f"""<div class="fund-card scb-line">
-            <p style='color:#6366f1; font-weight:bold; font-size:0.8rem;'>SCB RMF (InnovestX)</p>
-            <h4 style='margin:0;'>{info['scb']}</h4>
-            <p style='color:#64748b; font-size:0.8rem;'>{info['desc']}</p>
-        </div>""", unsafe_allow_html=True)
-        
-    with c2:
-        st.markdown(f"""<div class="fund-card kkp-line">
-            <p style='color:#f59e0b; font-weight:bold; font-size:0.8rem;'>KKP RMF (Dime!)</p>
-            <h4 style='margin:0;'>{info['kkp']}</h4>
-            <p style='color:#64748b; font-size:0.8rem;'>เน้นบริหารเชิงรุก / ป้องกันค่าเงิน</p>
-        </div>""", unsafe_allow_html=True)
+for name, info in strategic_pairs.items():
+    rsi, chg = get_live_rsi(info['ticker'])
+    weight, action = get_battle_decision(rsi)
     
-    kkp_weight = st.slider(f"ปรับน้ำหนัก KKP (%)", 0, 100, int(default_kkp))
-    scb_weight = 100 - kkp_weight
+    # เปิดกล่องวิเคราะห์อัตโนมัติถ้า RSI ต่ำ (จังหวะช้อน)
+    with st.expander(f"📌 {name} | RSI: {rsi} | สถานะ: {action}", expanded=(rsi is not None and rsi < 40)):
+        col_info, col_dec = st.columns([2, 1])
+        
+        with col_info:
+            c1, c2 = st.columns(2)
+            with c1:
+                st.markdown(f"""<div class="decision-card scb-highlight">
+                    <p style='color:#6366f1; font-weight:bold; font-size:0.8rem;'>SCB OPTION</p>
+                    <h4 style='margin:0;'>{info['scb']}</h4>
+                    <p style='font-size:0.85rem; color:#64748b; margin-top:5px;'>{info['scb_note']}</p>
+                </div>""", unsafe_allow_html=True)
+            with c2:
+                st.markdown(f"""<div class="decision-card kkp-highlight">
+                    <p style='color:#f59e0b; font-weight:bold; font-size:0.8rem;'>KKP OPTION</p>
+                    <h4 style='margin:0;'>{info['kkp']}</h4>
+                    <p style='font-size:0.85rem; color:#64748b; margin-top:5px;'>{info['kkp_note']}</p>
+                </div>""", unsafe_allow_html=True)
+        
+        with col_dec:
+            st.metric("สัดส่วนลงเงินรอบนี้", f"{weight}%")
+            if weight >= 80:
+                st.success("🔥 โอกาสทอง! ช้อนของถูก")
+            elif weight == 0:
+                st.error("🛑 แพงเกินไป! ถือเงินสดรอ")
+            else:
+                st.info("📈 รักษาวินัย eDCA")
 
-with col_res:
-    st.metric("RSI ปัจจุบัน", f"{rsi_val}")
-    st.write("---")
-    st.metric(f"ยอดซื้อ SCB ({scb_weight}%)", f"฿{budget * (scb_weight/100):,.2f}")
-    st.metric(f"ยอดซื้อ KKP ({kkp_weight}%)", f"฿{budget * (kkp_weight/100):,.2f}")
+# --- เครื่องคิดเลขคำนวณยอดเงินลงทุน ---
+st.divider()
+st.subheader("🧮 เครื่องคิดเลขจัดสรรงบ eDCA")
 
-# Strategy Note based on RSI
-if rsi_val:
+c_sel, c_bud = st.columns([2, 1])
+with c_sel:
+    target_pair = st.selectbox("เลือกกองทุนที่จะลงทุนรอบนี้", list(strategic_pairs.keys()))
+with c_bud:
+    budget = st.number_input("ยอดงบประมาณ (บาท)", value=10000, step=1000)
+
+rsi_calc, _ = get_live_rsi(strategic_pairs[target_pair]['ticker'])
+sugg_weight, _ = get_battle_decision(rsi_calc)
+
+# ปรับสัดส่วนตาม RSI (AI แนะนำเบื้องต้น)
+final_kkp_weight = st.slider(f"สัดส่วน KKP สำหรับ {target_pair} (%)", 0, 100, int(sugg_weight))
+final_scb_weight = 100 - final_kkp_weight
+
+amt_scb = budget * (final_scb_weight / 100)
+amt_kkp = budget * (final_kkp_weight / 100)
+
+res1, res2, res3 = st.columns(3)
+res1.metric(f"ยอดซื้อ SCB ({final_scb_weight}%)", f"฿{amt_scb:,.2f}")
+res2.metric(f"ยอดซื้อ KKP ({final_kkp_weight}%)", f"฿{amt_kkp:,.2f}")
+res3.metric("RSI ปัจจุบัน", f"{rsi_calc}")
+
+# บทวิเคราะห์จาก AI
+if rsi_calc:
     st.markdown("<div class='strategy-note'>", unsafe_allow_html=True)
-    if rsi_val < 40:
-        st.write(f"**💡 AI Sniper Analysis:** จังหวะ RSI ต่ำ ({rsi_val}) พี่โบ้ควรเน้นช้อนไปที่ **{info['kkp']}** ในแอป Dime! ครับ เพราะกองทุนที่บริหารแบบ Active จะทำผลงานได้ดีกว่ามากในช่วงที่ตลาดเริ่มฟื้นตัวจากจุดต่ำสุด")
-    elif rsi_val > 65:
-        st.write(f"**💡 AI Sniper Analysis:** ตลาดเข้าเขต Overbought (RSI {rsi_val}) แล้วครับ พี่โบ้ควรพักการซื้อกองทุนนี้ไว้ก่อน หรือโยนเงินไปพักในบัญชี Dime! Save รับดอกเบี้ย 3% รอจังหวะย่อตัวรอบหน้าครับ")
+    if rsi_calc < 35:
+        st.write(f"**💡 คำแนะนำวิศวกร:** RSI {rsi_calc} อยู่ในโซนถูกมากครับพี่โบ้! แนะนำเทน้ำหนักไปที่ **{strategic_pairs[target_pair]['kkp']}** เพราะในจังหวะตลาดฟื้นตัว กองทุนที่เน้นความเร็วและการบริหารเชิงรุกจะให้ผลตอบแทนที่ดีกว่าครับ")
+    elif rsi_calc > 65:
+        st.write(f"**💡 คำแนะนำวิศวกร:** ตลาดร้อนแรงเกินไป (RSI {rsi_calc}) พี่โบ้เก็บเงินสดไว้ในบัญชี Dime! รับดอกเบี้ย 3% รอจังหวะย่อตัวดีกว่าครับ อย่าเพิ่งไปไล่ราคาตอนนี้")
     else:
-        st.write(f"**💡 AI Sniper Analysis:** ตลาดอยู่ในโซนปกติ แนะนำใช้ **{info['scb']}** เพื่อประหยัดค่าใช้จ่ายการจัดการ (Fee) ในการทำ DCA ระยะยาวครับ")
+        st.write(f"**💡 คำแนะนำวิศวกร:** สภาวะตลาดปกติ (RSI {rsi_calc}) แนะนำแบ่งเงินลงทุน SCB และ KKP สัดส่วนละครึ่งเพื่อให้ได้ทั้งความมั่นคงและโอกาสเติบโตครับ")
     st.markdown("</div>", unsafe_allow_html=True)
 
 st.divider()
-st.caption("Suchat Engineering Trading System • คัดกรองกองทุนเพื่อความมั่งคั่งของพี่โบ้")
+st.caption("Suchat Engineering Trading System • พัฒนาเพื่อการตัดสินใจที่เฉียบคมของพี่โบ้")
