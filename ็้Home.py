@@ -4,27 +4,27 @@ import yfinance as yf
 from datetime import datetime, timedelta
 import google.generativeai as genai
 
-# --- 1. การตั้งค่าพื้นฐานและธีม (Global Config) ---
+# --- 1. Global Configuration & Theme ---
 st.set_page_config(
     page_title="POLARIS: Unified Command Center",
     page_icon="🎯",
     layout="wide"
 )
 
-# ปรับแต่ง CSS สไตล์วิศวกรโบ้ (Clean & Premium)
+# Custom CSS for Premium Engineering Look
 st.markdown("""
     <style>
     .stApp { background-color: #f8fafc; }
     .stMetric { background-color: white !important; border-radius: 12px !important; border: 1px solid #e2e8f0 !important; padding: 15px !important; }
     .strategy-note { background-color: #f1f5f9; padding: 15px; border-radius: 12px; border-left: 5px solid #334155; margin-bottom: 10px; }
-    .fund-card { background: white; padding: 15px; border-radius: 15px; border: 1px solid #e2e8f0; margin-bottom: 10px; }
     .zing-tag { background: #fee2e2; color: #ef4444; padding: 2px 8px; border-radius: 4px; font-weight: bold; font-size: 0.7rem; }
     .buy-tag { background: #dcfce7; color: #166534; padding: 2px 8px; border-radius: 4px; font-weight: bold; font-size: 0.7rem; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- Utility Functions (RSI & Data) ---
-def get_stock_analysis(ticker):
+# --- 2. Shared Utilities (API & Data) ---
+def get_analysis_data(ticker):
+    """ฟังก์ชันกลางสำหรับดึงข้อมูลและคำนวณ RSI, Volume Ratio"""
     try:
         data = yf.download(ticker, period="3mo", interval="1d", progress=False)
         if data.empty: return None
@@ -38,95 +38,132 @@ def get_stock_analysis(ticker):
         rs = gain / loss
         rsi = 100 - (100 / (1 + rs))
         
-        # Vol Ratio (เทียบเฉลี่ย 5 วัน)
+        # Vol Ratio (5-day avg)
         avg_vol = vol.iloc[-6:-1].mean()
         vol_ratio = vol.iloc[-1] / avg_vol if avg_vol > 0 else 0
         
-        curr_price = float(close.iloc[-1])
-        rsi_val = float(rsi.iloc[-1])
-        vol_val = float(vol_ratio)
-        
-        # Sniper Logic
-        advice = "Wait"
-        if rsi_val < 35 and vol_val > 1.2: advice = "🔥 Strong Buy (Reversal)"
-        elif 60 < rsi_val < 72 and vol_val > 2.0: advice = "🚀 Follow Buy (Momentum)"
-        elif rsi_val > 75: advice = "🛑 Sell/Take Profit"
-        elif vol_val > 2.5: advice = "⚡ Super Zing Entry"
+        curr_p = float(close.iloc[-1])
+        change = ((curr_p - close.iloc[-2]) / close.iloc[-2]) * 100
         
         return {
-            "price": round(curr_price, 2),
-            "rsi": round(rsi_val, 2),
-            "vol_ratio": round(vol_val, 2),
-            "change": round(((curr_price - close.iloc[-2])/close.iloc[-2])*100, 2),
-            "advice": advice
+            "price": round(curr_p, 2),
+            "rsi": round(float(rsi.iloc[-1]), 2),
+            "vol_ratio": round(float(vol_ratio), 2),
+            "change": round(float(change), 2)
         }
     except: return None
 
-# --- 2. Modules ตามชุดรบ ---
+def ai_news_impact(news, symbols):
+    """ระบบ AI วิเคราะห์ข่าว (ชุดที่ 2)"""
+    try:
+        model = genai.GenerativeModel('gemini-2.5-flash-preview-09-2025')
+        prompt = f"Analyze this news: '{news}' for stocks: {symbols}. Predict impact (+/- Score), sentiment, and suggest action: Buy/Hold/Wait."
+        response = model.generate_content(prompt)
+        return response.text
+    except: return "AI analysis unavailable."
 
-def zone_sniper_zing_hub():
-    """ ชุดที่ 2: หุ้นซิ่ง (7, 9, 10, 11) """
-    st.header("🚀 ชุดที่ 2: Sniper Zing Hub (7, 9, 10, 11)")
-    t1, t2, t3 = st.tabs(["🎯 สแกนซิ่งล่วงหน้า (7 & 9)", "🧪 ผลย้อนหลัง 1 ปี (10)", "📰 ข่าวรายตัว AI (11)"])
+# --- 3. Battle Sets (The Modules) ---
+
+def set_1_wealth_intelligence():
+    """ชุดที่ 1: หุ้นแกร่ง & ภาษี (1, 3, 6, 8)"""
+    st.header("⚖️ ชุดที่ 1: Wealth Hub (หุ้นแกร่ง & ภาษี)")
+    t1, t2, t3 = st.tabs(["📈 สแกน RSI & eDCA (1, 6)", "💰 เช็กความคุ้ม & ปันผล (8)", "📅 แผนวันที่ซื้อ DCA (3)"])
     
     with t1:
-        st.subheader("วิเคราะห์จุดเข้า-ออก และวอลุ่มความซิ่ง")
-        targets = st.text_input("ระบุหุ้นที่เฝ้า (เช่น CPALL, WHA, TRUE, DELTA)", value="CPALL, WHA").upper()
+        st.subheader("หาจังหวะสะสมหุ้นแกร่ง & กองทุน RMF")
+        funds = {"Nasdaq": "^NDX", "S&P500": "^GSPC", "SET50": "^SET50.BK", "Quality": "QUAL"}
+        cols = st.columns(len(funds))
+        for i, (name, tick) in enumerate(funds.items()):
+            d = get_analysis_data(tick)
+            if d:
+                with cols[i]:
+                    st.metric(name, f"฿{d['price']}", f"{d['change']}%")
+                    st.write(f"RSI: {d['rsi']}")
+                    if d['rsi'] < 40: st.success("ช้อน KKP (Dime!)")
+                    else: st.info("DCA SCB (InvX)")
+
+    with t2:
+        st.subheader("Value Investor Check (หน้า 8)")
+        st.write("วิเคราะห์ความคุ้มค่าของเงินปันผลและสิทธิภาษี")
         
-        for s in targets.split(','):
+    with t3:
+        st.subheader("DCA Calendar (หน้า 3)")
+        st.write("วางแผนวันที่ดีที่สุดในการลงเงิน (เลี่ยงช่วง Window Dressing)")
+
+def set_2_sniper_zing():
+    """ชุดที่ 2: หุ้นซิ่ง (7, 9, 10, 11)"""
+    st.header("🚀 ชุดที่ 2: Sniper Zing Hub (สแกน, วอลุ่ม, Backtest, ข่าว)")
+    t1, t2, t3 = st.tabs(["🎯 สแกนซิ่ง & วอลุ่ม (7, 9)", "🧪 Backtest 1 ปี (10)", "📰 วิเคราะห์ข่าวรายตัว (11)"])
+    
+    with t1:
+        st.subheader("Scanner: คัดตัวซิ่งล่วงหน้า")
+        stocks = st.text_input("ระบุหุ้นซิ่งที่เฝ้า:", value="CPALL, WHA, TRUE").upper()
+        for s in stocks.split(','):
             s = s.strip()
-            data = get_stock_analysis(s + ".BK")
-            if data:
+            d = get_analysis_data(s + ".BK")
+            if d:
                 with st.container():
-                    st.markdown(f"#### {s} - {data['advice']}")
                     c1, c2, c3, c4 = st.columns(4)
-                    c1.metric("ราคาปัจจุบัน", f"฿{data['price']}", f"{data['change']}%")
-                    c2.metric("RSI (แรงส่ง)", data['rsi'])
-                    c3.metric("Volume Ratio (เจ้าเข้า)", f"{data['vol_ratio']}x")
+                    c1.metric(s, f"฿{d['price']}", f"{d['change']}%")
+                    c2.metric("RSI Momentum", d['rsi'])
+                    c3.metric("Volume Ratio", f"{d['vol_ratio']}x")
                     with c4:
-                        st.write("**Sniper Guide:**")
-                        if data['vol_ratio'] > 2: st.markdown("<span class='zing-tag'>🔥 SUPER ZING</span>", unsafe_allow_html=True)
-                        if "Buy" in data['advice']: st.markdown("<span class='buy-tag'>✅ ENTRY POINT</span>", unsafe_allow_html=True)
-                        st.write(f"คัทที่: {data['price']*0.97:.2f}")
+                        if d['vol_ratio'] > 2: st.markdown("<span class='zing-tag'>🔥 SUPER ZING</span>", unsafe_allow_html=True)
+                        if d['rsi'] < 40: st.markdown("<span class='buy-tag'>✅ ENTRY</span>", unsafe_allow_html=True)
+                        st.write(f"Stop: {d['price']*0.97:.2f}")
                     st.divider()
 
-def zone_wealth_intelligence():
-    """ ชุดที่ 1: หุ้นแกร่ง & ภาษี (1, 3, 6, 8) """
-    st.header("⚖️ ชุดที่ 1: Wealth Intelligence (1, 3, 6, 8)")
-    st.info("หุ้นแกร่งสะสม | เช็กความคุ้ม | จังหวะ eDCA | วันที่ควรซื้อ")
-    # (โค้ดส่วนหน้า 1, 3, 6, 8 จะอยู่ที่นี่)
-    st.write("กำลังรอดึงข้อมูลกองทุน RMF...")
+    with t2:
+        st.subheader("Backtest Lab (หน้า 10)")
+        st.write("จำลองผลตอบแทนย้อนหลัง 1 ปี เมื่อซื้อที่ RSI ต่ำกว่าเกณฑ์")
 
-def zone_commodity_gold():
-    """ ชุดที่ 3: ทองคำ (5) """
-    st.header("🌕 ชุดที่ 3: Gold Sniper (5)")
-    st.write("กลยุทธ์เล่นทองคำยามตลาดหุ้นนิ่ง")
+    with t3:
+        st.subheader("AI News Sentiment (หน้า 11)")
+        news_input = st.text_area("วางข่าวล่าสุดที่นี่:")
+        if st.button("วิเคราะห์ผลกระทบข่าว"):
+            st.write(ai_news_impact(news_input, stocks))
 
-def zone_wealth_retirement():
-    """ ชุดที่ 4: ความมั่งคั่ง & พอร์ต (2, 4) """
-    st.header("🛡️ ชุดที่ 4: Wealth & Portfolio (2, 4)")
-    st.write("สินทรัพย์ปัจจุบัน และ แผนเกษียณ Titan")
+def set_3_gold_sniper():
+    """ชุดที่ 3: ทองคำ (5)"""
+    st.header("🌕 ชุดที่ 3: Gold Sniper (ทองคำ)")
+    d = get_analysis_data("GC=F")
+    if d:
+        st.metric("Gold Futures ($)", d['price'], f"{d['change']}%")
+        st.write(f"RSI ทองคำ: {d['rsi']}")
+    st.info("กลยุทธ์: เล่นทองคำเมื่อหุ้นไทยผันผวนจากการเมือง หรือ RSI หุ้นเข้าเขต Overbought")
 
-# --- 3. Sidebar Menu ---
+def set_4_wealth_retirement():
+    """ชุดที่ 4: พอร์ต & เกษียณ (2, 4) """
+    st.header("🛡️ ชุดที่ 4: Wealth & Portfolio (พอร์ตปัจจุบัน & Titan)")
+    col1, col2 = st.columns(2)
+    with col1:
+        st.subheader("Portfolio ปัจจุบัน (หน้า 4)")
+        st.write("สรุปยอดรวมสินทรัพย์ใน Dime! และ InnovestX")
+    with col2:
+        st.subheader("Titan เกษียณ (หน้า 2)")
+        st.write("ตรวจสอบเป้าหมายเงินเก็บหลังเกษียณ")
+
+# --- 4. Main Dispatcher (Sidebar Control) ---
+
 with st.sidebar:
-    st.markdown("<h1 style='text-align: center;'>POLARIS v3.2</h1>", unsafe_allow_html=True)
+    st.markdown("<h1 style='text-align: center;'>POLARIS</h1>", unsafe_allow_html=True)
     st.divider()
-    selected_zone = st.radio(
-        "โซนปฏิบัติการ:",
-        [
-            "🚀 ชุดที่ 2: หุ้นซิ่ง Sniper",
-            "⚖️ ชุดที่ 1: หุ้นแกร่ง/ภาษี",
-            "🌕 ชุดที่ 3: ทองคำ Sniper",
-            "🛡️ ชุดที่ 4: พอร์ต/เกษียณ"
-        ]
+    choice = st.radio(
+        "เลือกชุดปฏิบัติการ:",
+        ["🚀 ชุด 2: หุ้นซิ่ง (7, 9, 10, 11)", 
+         "⚖️ ชุด 1: หุ้นแกร่ง (1, 3, 6, 8)", 
+         "🌕 ชุด 3: ทองคำ (5)", 
+         "🛡️ ชุด 4: พอร์ต/เกษียณ (2, 4)"]
     )
+    st.divider()
+    st.caption(f"Engineered by P'Bo Sniper • {datetime.now().strftime('%H:%M')}")
 
-# --- 4. Main Dispatcher ---
-if selected_zone == "🚀 ชุดที่ 2: หุ้นซิ่ง Sniper":
-    zone_sniper_zing_hub()
-elif selected_zone == "⚖️ ชุดที่ 1: หุ้นแกร่ง/ภาษี":
-    zone_wealth_intelligence()
-elif selected_zone == "🛡️ ชุดที่ 4: พอร์ต/เกษียณ":
-    zone_wealth_retirement()
+# Dispatcher Logic
+if choice == "🚀 ชุด 2: หุ้นซิ่ง (7, 9, 10, 11)":
+    set_2_sniper_zing()
+elif choice == "⚖️ ชุด 1: หุ้นแกร่ง (1, 3, 6, 8)":
+    set_1_wealth_intelligence()
+elif choice == "🛡️ ชุด 4: พอร์ต/เกษียณ (2, 4)":
+    set_4_wealth_retirement()
 else:
-    zone_commodity_gold()
+    set_3_gold_sniper()
