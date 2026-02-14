@@ -48,11 +48,14 @@ st.markdown("""
 # --- Enhanced Analysis Logic ---
 def get_detailed_analysis(ticker):
     try:
-        # ดึงข้อมูลย้อนหลัง 3 เดือนเพื่อคำนวณ MA และ RSI
         data = yf.download(ticker, period="3mo", interval="1d", progress=False)
         if data.empty: return None
         
-        close = data['Close'].iloc[:, 0] if isinstance(data['Close'], pd.DataFrame) else data['Close']
+        # จัดการข้อมูลกรณี MultiIndex
+        if isinstance(data['Close'], pd.DataFrame):
+            close = data['Close'].iloc[:, 0]
+        else:
+            close = data['Close']
         
         # 1. RSI Calculation
         delta = close.diff()
@@ -64,24 +67,23 @@ def get_detailed_analysis(ticker):
         # 2. Moving Average (Trend)
         ma20 = close.rolling(window=20).mean()
         
-        # 3. Reversal Signal Logic (V-Shape Detection)
-        # เงื่อนไข: RSI ต่ำ (<35) + ราคาเริ่มงัดขึ้นจาก Low ล่าสุด
+        # 3. Reversal Signal Logic
         recent_low = close.iloc[-5:].min()
         curr_price = close.iloc[-1]
-        is_reversing = (rsi.iloc[-1] < 40) and (curr_price > recent_low)
+        last_rsi = float(rsi.iloc[-1])
+        is_reversing = (last_rsi < 45) and (curr_price > recent_low)
         
-        # 4. Momentum (ROC)
+        # 4. Momentum
         roc = ((curr_price - close.iloc[-5]) / close.iloc[-5]) * 100
-        
         change = ((curr_price - close.iloc[-2]) / close.iloc[-2]) * 100
         
         return {
-            "price": round(curr_price, 2),
-            "change": round(change, 2),
-            "rsi": round(float(rsi.iloc[-1]), 2),
+            "price": round(float(curr_price), 2),
+            "change": round(float(change), 2),
+            "rsi": round(last_rsi, 2),
             "ma20": round(float(ma20.iloc[-1]), 2),
             "is_reversing": is_reversing,
-            "roc": round(roc, 2),
+            "roc": round(float(roc), 2),
             "trend": "BULL" if curr_price > ma20.iloc[-1] else "BEAR"
         }
     except:
@@ -107,67 +109,65 @@ for i, (name, info) in enumerate(fund_db.items()):
     analysis = get_detailed_analysis(info['ticker'])
     with cols[i]:
         if analysis:
-            status_color = "green" if analysis['is_reversing'] else "normal"
             st.metric(name, f"{analysis['price']}", f"{analysis['change']}%")
-            
             if analysis['is_reversing']:
-                st.markdown("✅ **สัญญาณกลับตัว!**")
+                st.success("✅ สัญญาณกลับตัว!")
             else:
-                st.markdown("⏳ รอจังหวะ...")
-            
+                st.info("⏳ รอจังหวะ...")
             st.write(f"RSI: {analysis['rsi']}")
         else:
-            st.error("Error Data")
+            st.error("Data Error")
 
 st.divider()
 
 # --- Tactical Selection ---
 st.subheader("🧮 แผนภูมิคำนวณการช้อน (Decision Matrix)")
 selected_name = st.selectbox("เลือกกองทุนที่จะวิเคราะห์จุดกลับหัว", list(fund_db.keys()))
-budget = st.number_input("งบประมาณ (บาท)", value=10000)
+budget = st.number_input("งบประมาณ (บาท)", value=10000, step=1000)
 
 analysis = get_detailed_analysis(fund_db[selected_name]['ticker'])
 info = fund_db[selected_name]
 
 if analysis:
-    col_card, col_chart = st.columns([2, 1])
+    col_card, col_calc = st.columns([2, 1])
     
     with col_card:
-        # แสดงการ์ดกองทุน
         c1, c2 = st.columns(2)
         with c1:
             st.markdown(f"""<div class="fund-card scb-line">
                 <p style='color:#6366f1; font-weight:bold; font-size:0.8rem;'>SCB RMF</p>
                 <h4 style='margin:0;'>{info['scb']}</h4>
-                <p style='color:#64748b; font-size:0.8rem;'>เน้นความมั่นคง / ปลายทางเกษียณ</p>
+                <p style='color:#64748b; font-size:0.8rem;'>เน้นความมั่นคง / ค่าธรรมเนียมต่ำ</p>
             </div>""", unsafe_allow_html=True)
         with c2:
-            st.markdown(f"""<div class="fund-card kkp-line {'reversal-glow' if analysis['is_reversing'] else ''}">
+            glow_class = "reversal-glow" if analysis['is_reversing'] else ""
+            st.markdown(f"""<div class="fund-card kkp-line {glow_class}">
                 <p style='color:#f59e0b; font-weight:bold; font-size:0.8rem;'>KKP RMF (Sniper Choice)</p>
                 <h4 style='margin:0;'>{info['kkp']}</h4>
-                <p style='color:#64748b; font-size:0.8rem;'>เน้น Active / ช้อนทำกำไรใน Dime!</p>
+                <p style='color:#64748b; font-size:0.8rem;'>เน้น Active / ช้อนใน Dime!</p>
             </div>""", unsafe_allow_html=True)
 
-        # คำนวณสัดส่วน
+        # Slider สัดส่วน
         sugg_kkp = 100 if analysis['is_reversing'] else 80 if analysis['rsi'] < 40 else 50
         kkp_w = st.slider("สัดส่วน KKP (%)", 0, 100, int(sugg_kkp))
         scb_w = 100 - kkp_w
         
-    with col_res := st.columns(1)[0]:
+    with col_calc:
         r1, r2, r3 = st.columns(3)
-        r1.metric("ยอดช้อน SCB", f"฿{budget*(scb_w/100):,.2f}")
-        r2.metric("ยอดช้อน KKP", f"฿{budget*(kkp_w/100):,.2f}")
-        r3.metric("Reversal Prob.", "HIGH" if analysis['is_reversing'] else "LOW")
+        # แสดงผลลัพธ์ในกรอบเดียวกับเครื่องคิดเลข
+        st.metric("ยอดช้อน SCB", f"฿{budget*(scb_w/100):,.2f}")
+        st.metric("ยอดช้อน KKP", f"฿{budget*(kkp_w/100):,.2f}")
+        st.metric("Reversal Prob.", "HIGH" if analysis['is_reversing'] else "LOW")
 
-    # AI Commentary for Reversal
+    # AI Commentary
     st.markdown("<div class='strategy-note'>", unsafe_allow_html=True)
     if analysis['is_reversing']:
-        st.write(f"**💡 Sniper Analysis:** พี่โบ้ครับ! กราฟ {selected_name} เริ่มมีอาการ **'งัดหัวขึ้น'** หลังจากลงไปลึก (RSI {analysis['rsi']}) นี่คือจังหวะที่คนรอช้อนกันเยอะ ราคามักจะดีดไวมาก แนะนำให้กดซื้อ **{info['kkp']}** ในเช้าวันจันทร์ให้ทันเพื่อได้ราคาเกาะกลุ่ม V-Shape ครับ")
+        st.write(f"**💡 Sniper Analysis:** พี่โบ้ครับ! กราฟ {selected_name} เริ่มมีอาการ **'งัดหัวขึ้น'** หลังจากลงไปลึก (RSI {analysis['rsi']}) ราคามักจะดีดไวมาก แนะนำให้กดซื้อ **{info['kkp']}** เช้าวันจันทร์นี้ให้ทันครับ")
     elif analysis['rsi'] < 30:
-        st.write(f"**💡 Sniper Analysis:** RSI อยู่ที่ {analysis['rsi']} ซึ่งต่ำมากแต่ราคายังไม่หยุดไหล ระวังการ 'กลับหัวกะทันหัน' ให้แบ่งไม้ซื้อ 50% ก่อนเพื่อกันตกรถครับ")
+        st.write(f"**💡 Sniper Analysis:** RSI {analysis['rsi']} ต่ำมากแต่ราคายังไม่นิ่ง ระวังการกลับหัวกะทันหัน แบ่งไม้ซื้อ 50% กันตกรถก่อนได้ครับ")
     else:
-        st.write(f"**💡 Sniper Analysis:** ราคายังแกว่งตัวในกรอบแนวโน้ม {analysis['trend']} รอให้ RSI ลงต่ำกว่า 40 หรือมีสัญญาณงัดหัวที่ชัดเจนกว่านี้ค่อยอัดเต็มข้อครับ")
+        st.write(f"**💡 Sniper Analysis:** ราคายังแกว่งตัวในแนวโน้ม {analysis['trend']} รอให้ RSI ลงต่ำกว่า 40 หรือมีสัญญาณงัดหัวชัดๆ ค่อยอัดเต็มข้อครับ")
     st.markdown("</div>", unsafe_allow_html=True)
 
 st.divider()
-st.caption("ระบบคำนวณจุดกลับหัวอัตโนมัติ • ป้องกันการตกรถและลดความเสี่ยงในการช้อนผิดจังหวะ")
+st.caption("Suchat Strategy Center • ระบบตรวจจับจุดกลับหัวอัตโนมัติ")
