@@ -38,39 +38,55 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- RSI Calculation Logic ---
+# --- RSI Calculation Logic (FIXED FOR VALUE ERROR) ---
 def calculate_rsi(ticker_symbol, window=14):
     try:
         # ดึงข้อมูล 1 เดือนเพื่อให้ได้ค่า RSI-14 ที่แม่นยำ
         data = yf.download(ticker_symbol, period="1mo", interval="1d", progress=False)
         if data.empty: return None, 0
         
-        close = data['Close']
+        # จัดการกรณี yfinance คืนค่าเป็น DataFrame ที่มี MultiIndex
+        if isinstance(data['Close'], pd.DataFrame):
+            close = data['Close'].iloc[:, 0] # ดึงคอลัมน์แรกออกมาเป็น Series
+        else:
+            close = data['Close']
+            
         delta = close.diff()
         gain = (delta.where(delta > 0, 0)).rolling(window=window).mean()
         loss = (-delta.where(delta < 0, 0)).rolling(window=window).mean()
         
+        # ป้องกันการหารด้วยศูนย์
         rs = gain / loss
-        rsi = 100 - (100 / (1 + rs))
+        rsi_series = 100 - (100 / (1 + rs))
         
-        curr_price = close.iloc[-1]
-        prev_close = close.iloc[-2]
+        # ดึงเฉพาะค่าสุดท้ายออกมาเป็นตัวเลข (Float) เพื่อป้องกัน Error
+        rsi_val = float(rsi_series.iloc[-1])
+        
+        curr_price = float(close.iloc[-1])
+        prev_close = float(close.iloc[-2])
         change_pct = ((curr_price - prev_close) / prev_close) * 100
         
-        return round(rsi.iloc[-1], 2), round(change_pct, 2)
-    except:
+        if pd.isna(rsi_val): return None, 0
+        
+        return round(rsi_val, 2), round(change_pct, 2)
+    except Exception as e:
         return None, 0
 
 # --- Strategy Logic: Mapping RSI to Investment Weight ---
 def get_suggested_weight(rsi):
+    # ตรวจสอบว่า rsi เป็นตัวเลขตัวเดียวจริงๆ
     if rsi is None: return 50 
-    if rsi < 30: return 100    # Oversold - ใส่เต็ม 100%
-    if rsi < 40: return 80     # เริ่มถูก - เน้นเก็บ
-    if rsi > 70: return 0      # Overbought - พักก่อน
-    if rsi > 60: return 20     # เริ่มแพง - ทยอยหยุด
-    return 50                  # ปกติ - DCA 50/50
+    try:
+        rsi_float = float(rsi)
+        if rsi_float < 30: return 100    # Oversold - ใส่เต็ม 100%
+        if rsi_float < 40: return 80     # เริ่มถูก - เน้นเก็บ
+        if rsi_float > 70: return 0      # Overbought - พักก่อน
+        if rsi_float > 60: return 20     # เริ่มแพง - ทยอยหยุด
+        return 50                  # ปกติ - DCA 50/50
+    except:
+        return 50
 
-# --- Fund Database (ขยายเพิ่มเป็น 9 กลุ่ม) ---
+# --- Fund Database (9 Strategic Groups) ---
 fund_map = {
     "S&P 500 (US)": {"ticker": "^GSPC", "scb": "SCBRMS&P500", "kkp": "KKP S&P500 SET-RMF", "desc": "หุ้นใหญ่สหรัฐฯ 500 ตัว"},
     "Nasdaq 100 (Tech)": {"ticker": "^NDX", "scb": "SCBNDQ", "kkp": "KKP NDQ100-H-RMF", "desc": "หุ้นเทคโนโลยีและนวัตกรรม"},
@@ -85,7 +101,7 @@ fund_map = {
 
 # --- Header ---
 st.title("⚖️ Smart Fund Allocator (RSI Strategy v2)")
-st.caption("ระบบวิเคราะห์ความถูกแพงของตลาดโลก 9 กลุ่มยุทธศาสตร์ เพื่อจัดสรร RMF (SCB vs KKP) สำหรับวิศวกรโบ้")
+st.caption("ระบบวิเคราะห์ความถูกแพงของตลาดโลก 9 กลุ่มยุทธศาสตร์ เพื่อจัดสรร RMF (SCB vs KKP)")
 
 # --- Dashboard: Market Overview with RSI ---
 st.subheader("📊 Market Strategy Dashboard (ภาพรวม 9 กลุ่ม)")
@@ -132,7 +148,7 @@ with c1:
     </div>""", unsafe_allow_html=True)
     
     # Slider ปรับน้ำหนักตาม AI แนะนำเป็นค่าเริ่มต้น
-    scb_weight = st.slider("สัดส่วน SCB (%)", 0, 100, (100 - ai_suggested_kkp))
+    scb_weight = st.slider("สัดส่วน SCB (%)", 0, 100, int(100 - ai_suggested_kkp))
 
 with c2:
     st.markdown(f"""<div class="fund-card highlight-kkp">
@@ -164,16 +180,14 @@ with r3:
         st.info("📈 STRATEGY: DCA MODE")
 
 # --- Strategy Analysis ---
-st.write("### 🧠 AI Strategy Analysis (รายสินทรัพย์)")
+st.write("### 🧠 AI Strategy Analysis")
 if curr_rsi:
     if curr_rsi < 30:
-        st.success(f"**จังหวะทอง:** RSI อยู่ที่ {curr_rsi} (Oversold) ตลาดกลัวเกินเหตุ เป็นจังหวะเข้าทำกำไรระยะยาวที่ดีที่สุด แนะนำเพิ่มน้ำหนักเต็มที่ครับ")
+        st.success(f"**จังหวะทอง:** RSI อยู่ที่ {curr_rsi} (Oversold) ตลาดกลัวเกินเหตุ เป็นจังหวะเข้าทำกำไรระยะยาวที่ดีที่สุด")
     elif curr_rsi > 70:
-        st.error(f"**จังหวะระวัง:** RSI อยู่ที่ {curr_rsi} (Overbought) ตลาดร้อนแรงเกินไป มีความเสี่ยงที่จะพักฐาน แนะนำถือเงินสดรอครับ")
-    elif 30 <= curr_rsi <= 40:
-        st.info(f"**จังหวะสะสม:** ตลาดเริ่มถูก RSI {curr_rsi} ทยอยเพิ่มสัดส่วนได้มากกว่าปกติ (80/20)")
+        st.error(f"**จังหวะระวัง:** RSI อยู่ที่ {curr_rsi} (Overbought) ตลาดร้อนแรงเกินไป มีความเสี่ยงที่จะพักฐาน")
     else:
-        st.info(f"**จังหวะปกติ:** RSI {curr_rsi} ตลาดทรงตัว แนะนำแบ่งเงินลงทุนตามวินัย eDCA (50/50)")
+        st.info(f"**จังหวะปกติ:** RSI {curr_rsi} ตลาดทรงตัว แนะนำแบ่งเงินลงทุนตามวินัย eDCA")
 
 st.divider()
-st.caption(f"ข้อมูล Real-time อ้างอิง Ticker ตลาดโลก (ดีเลย์ 15 นาที) | Last Update: {datetime.now().strftime('%H:%M:%S')}")
+st.caption(f"ข้อมูล Real-time อ้างอิง Ticker ตลาดโลก | Last Update: {datetime.now().strftime('%H:%M:%S')}")
